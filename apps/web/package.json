@@ -1,0 +1,12 @@
+{
+  "name": "@ledgerone/web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LedgerOne frontend (Next.js, React, Tailwind CSS)",
+  "scripts": {},
+  "dependencies": {
+    "@ledgerone/shared-types": "*",
+    "@ledgerone/shared-utils": "*",
+    "@ledgerone/ui": "*"
+  }
+}
