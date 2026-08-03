@@ -4,11 +4,19 @@
 // generator + shared base fields) always comes first; the remaining module
 // files are concatenated in alphabetical order so the composed output is
 // deterministic across runs.
+//
+// Written directly into apps/api/src/database/ (sibling to migrations/,
+// 04_FOLDER_STRUCTURE.md Ch.11.3) — not into database/generated/ — so
+// Prisma Migrate's implicit migrations directory (always the sibling of
+// whatever --schema path it's given) resolves to the real, tracked
+// database/migrations/ folder instead of a throwaway location. The composed
+// file is still build output, not source of truth, and stays gitignored;
+// the Prisma Client output (database/generated/client) is unaffected.
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
 const SCHEMA_DIR = join(__dirname, "../../apps/api/src/database/schema");
-const OUTPUT_DIR = join(__dirname, "../../apps/api/src/database/generated");
+const OUTPUT_DIR = join(__dirname, "../../apps/api/src/database");
 const OUTPUT_FILE = join(OUTPUT_DIR, "schema.prisma");
 const BASE_FILE = "base.prisma";
 

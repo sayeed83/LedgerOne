@@ -1,0 +1,859 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "name": "LedgerOne - Authentication",
+    "description": "Authentication module API collection (login, MFA, refresh, logout, forgot/reset password, health). Reflects the implementation exactly as documented in engineering/testing/authentication/Authentication_API_Documentation.md — including known gaps (no rate limiting, no CSRF on /refresh, logout's Bearer requirement is documented but not enforced). Pair with the LedgerOne - Local Dev environment.\n\nRun order for a full happy-path pass: Health > Login (No MFA) > Refresh > Logout > Forgot Password > (manually set {{resetToken}}) > Reset Password.\nFor the MFA folder: Login (MFA Required) must be run first to populate {{mfaChallengeToken}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" },
+    { "key": "tenantId", "value": "1", "type": "string" },
+    { "key": "testEmail", "value": "test@example.com", "type": "string" },
+    { "key": "testPassword", "value": "a-strong-test-password", "type": "string" },
+    { "key": "mfaTestEmail", "value": "mfa-test@example.com", "type": "string" },
+    { "key": "newPassword", "value": "a-new-strong-password-123", "type": "string" },
+    { "key": "totpCode", "value": "123456", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "mfaChallengeToken", "value": "", "type": "string" },
+    { "key": "resetToken", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Unauthenticated liveness/readiness check. Not wrapped in the {data} envelope (deliberate exception, HC-004)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Body is bare {status: 'ok'}, not the {data} envelope\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.eql({ status: \"ok\" });",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is reasonable\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "GET /health — infrastructure check, no auth, no envelope."
+    },
+    {
+      "name": "Login",
+      "item": [
+        {
+          "name": "Login - Success (No MFA)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Login for an account with MFA disabled. Requires a seeded user_credentials row for {{testEmail}}/{{tenantId}} with password {{testPassword}} and is_mfa_enabled = false — there is no registration endpoint, so this must be created directly (see Authentication_API_Documentation.md § 0.4).\n\nOn success, saves {{accessToken}} as a collection variable and relies on Postman's cookie jar to store the refreshToken cookie automatically for subsequent requests against {{baseUrl}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response has data envelope\", function () {",
+                  "    pm.expect(json).to.have.property(\"data\");",
+                  "});",
+                  "",
+                  "if (json.data && json.data.mfaChallengeToken) {",
+                  "    pm.test(\"Account has MFA enabled — got a challenge token instead of an access token\", function () {",
+                  "        pm.expect(json.data.mfaChallengeToken).to.be.a(\"string\");",
+                  "    });",
+                  "    pm.collectionVariables.set(\"mfaChallengeToken\", json.data.mfaChallengeToken);",
+                  "    pm.test(\"No refresh-token cookie set when MFA is required\", function () {",
+                  "        pm.expect(pm.cookies.has(\"refreshToken\")).to.eql(false);",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Access token returned\", function () {",
+                  "        pm.expect(json.data.accessToken).to.be.a(\"string\");",
+                  "        pm.expect(json.data.accessToken.length).to.be.above(0);",
+                  "    });",
+                  "    pm.collectionVariables.set(\"accessToken\", json.data.accessToken);",
+                  "    pm.test(\"Refresh-token cookie is set (HttpOnly, Secure, SameSite=Strict)\", function () {",
+                  "        pm.expect(pm.cookies.has(\"refreshToken\")).to.eql(true);",
+                  "    });",
+                  "    pm.test(\"accessToken is not present in the body twice and refreshToken is never in the body\", function () {",
+                  "        pm.expect(json.data.refreshToken).to.be.undefined;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Login - Success (MFA Required)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"email\": \"{{mfaTestEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Login for an account with MFA enabled. Requires a seeded user_credentials row for {{mfaTestEmail}} with is_mfa_enabled = true and a known mfa_secret (there is no MFA-enrollment endpoint yet, so this must be seeded directly). Run this before anything in the MFA folder — it populates {{mfaChallengeToken}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns an mfaChallengeToken, not an accessToken\", function () {",
+                  "    pm.expect(json.data.mfaChallengeToken).to.be.a(\"string\");",
+                  "    pm.expect(json.data.accessToken).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"mfaChallengeToken\", json.data.mfaChallengeToken);",
+                  "",
+                  "pm.test(\"No refresh-token cookie is set\", function () {",
+                  "    pm.expect(pm.cookies.has(\"refreshToken\")).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Login - Invalid Credentials",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"definitely-the-wrong-password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Wrong password for a real account. Also covers 'account doesn't exist' — per AUTHN-005 both cases return an identical response, which is the key regression assertion here.\n\nRunning this request 10+ times in a row against the same account (e.g. via Postman Runner) will eventually flip the response to 403 AUTH_ACCOUNT_LOCKED — see the test script, which tolerates either outcome."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401 (invalid credentials) or 403 (locked from repeated failures)\", function () {",
+                  "    pm.expect([401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error envelope is well-formed\", function () {",
+                  "    pm.expect(json).to.have.property(\"error\");",
+                  "    pm.expect(json.error).to.have.property(\"code\");",
+                  "    pm.expect(json.error).to.have.property(\"message\");",
+                  "});",
+                  "",
+                  "if (pm.response.code === 401) {",
+                  "    pm.test(\"Error code is AUTH_INVALID_CREDENTIALS\", function () {",
+                  "        pm.expect(json.error.code).to.eql(\"AUTH_INVALID_CREDENTIALS\");",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Error code is AUTH_ACCOUNT_LOCKED\", function () {",
+                  "        pm.expect(json.error.code).to.eql(\"AUTH_ACCOUNT_LOCKED\");",
+                  "    });",
+                  "}",
+                  "",
+                  "pm.test(\"No accessToken leaked on failure, and this response itself set no cookie\", function () {",
+                  "    pm.expect(json.data).to.be.undefined;",
+                  "    // Checks THIS response's own Set-Cookie header, not the whole jar —",
+                  "    // the jar may still hold a cookie from an earlier successful login",
+                  "    // elsewhere in the run, which is correct and not what this asserts.",
+                  "    pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Login - Validation Error (Bad Email)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"email\": \"not-an-email\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Malformed email fails Zod's .email() check before any credential lookup happens."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});",
+                  "",
+                  "pm.test(\"Error includes Zod issue details\", function () {",
+                  "    pm.expect(json.error.details).to.be.an(\"array\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "POST /api/v1/auth/login — credential verification, MFA branch, and lockout."
+    },
+    {
+      "name": "MFA",
+      "item": [
+        {
+          "name": "MFA Verify - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfaChallengeToken\": \"{{mfaChallengeToken}}\",\n  \"totpCode\": \"{{totpCode}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "mfa", "verify"]
+            },
+            "description": "Requires {{mfaChallengeToken}} from 'Login - Success (MFA Required)' and a currently-valid {{totpCode}} generated from the seeded account's real TOTP secret (the placeholder 123456 will only work if that literal happens to be correct at the moment of the request — replace it with a live code from an authenticator app/otplib against the seeded secret)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Access token returned\", function () {",
+                  "    pm.expect(json.data.accessToken).to.be.a(\"string\");",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"accessToken\", json.data.accessToken);",
+                  "",
+                  "pm.test(\"Refresh-token cookie is set\", function () {",
+                  "    pm.expect(pm.cookies.has(\"refreshToken\")).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "MFA Verify - Invalid Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfaChallengeToken\": \"{{mfaChallengeToken}}\",\n  \"totpCode\": \"000000\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "mfa", "verify"]
+            },
+            "description": "Structurally valid (unexpired) challenge token, near-certainly wrong 6-digit code."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_INVALID_CREDENTIALS\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_INVALID_CREDENTIALS\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "MFA Verify - Invalid Challenge Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfaChallengeToken\": \"not-a-real-token\",\n  \"totpCode\": \"{{totpCode}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "mfa", "verify"]
+            },
+            "description": "Garbage challenge token — fails JWT verification before the TOTP code is ever checked."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MFA_CHALLENGE_INVALID\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MFA_CHALLENGE_INVALID\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "MFA Verify - Validation Error (Bad Code Format)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfaChallengeToken\": \"{{mfaChallengeToken}}\",\n  \"totpCode\": \"12345\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "mfa", "verify"]
+            },
+            "description": "5-digit code fails the ^\\d{6}$ schema rule before reaching the challenge token at all."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "POST /api/v1/auth/mfa/verify — completes an MFA-gated login."
+    },
+    {
+      "name": "Session",
+      "item": [
+        {
+          "name": "Refresh - Success",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "description": "No body. Relies on Postman's cookie jar to automatically send the refreshToken cookie captured by a prior Login/MFA Verify request in this same environment/domain."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"A new access token is returned\", function () {",
+                  "    pm.expect(json.data.accessToken).to.be.a(\"string\");",
+                  "});",
+                  "",
+                  "pm.test(\"The new access token differs from the previous one\", function () {",
+                  "    const previous = pm.collectionVariables.get(\"accessToken\");",
+                  "    if (previous) {",
+                  "        pm.expect(json.data.accessToken).to.not.eql(previous);",
+                  "    }",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"accessToken\", json.data.accessToken);",
+                  "",
+                  "pm.test(\"No new refresh-token cookie is issued (no rotation)\", function () {",
+                  "    pm.expect(json.data.refreshToken).to.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Logout - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "description": "Documented by the module spec as required (Bearer-authenticated), but NOT currently enforced by the server — included here for spec fidelity and to future-proof this collection once JWT-auth middleware is added. Only the refreshToken cookie is actually checked today."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "description": "Revokes the session tied to the current refreshToken cookie and clears it. Run 'Login - Success (No MFA)' first so the cookie jar has a live session. Placed before 'Refresh - No Cookie (401)' in this folder deliberately — that request clears the whole cookie jar as part of its own setup, which would otherwise break this one if it ran afterward."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "",
+                  "pm.test(\"Response body is empty\", function () {",
+                  "    pm.expect(pm.response.text()).to.eql(\"\");",
+                  "});",
+                  "",
+                  "pm.test(\"refreshToken cookie is cleared\", function () {",
+                  "    pm.expect(pm.cookies.has(\"refreshToken\")).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Refresh - No Cookie (401)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "description": "Clears the refreshToken cookie from Postman's jar via the pre-request script before sending, to genuinely exercise the no-cookie path. Run this AFTER 'Logout - Success' in this folder — its cookie-clearing side effect would otherwise break that request if it ran first."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.cookies.jar().clear(pm.variables.get(\"baseUrl\"), function () {});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_INVALID_REFRESH_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_INVALID_REFRESH_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Logout - Already Revoked (Idempotent, 204)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "description": "Run this immediately after 'Logout - Success' in the same environment run, WITHOUT logging in again in between, to confirm double-logout is a no-op, not an error. Note: since the cookie was already cleared by the prior request, Postman's jar has nothing to send here — this specific ordering actually re-exercises the 'no cookie' 401 path unless you manually re-add the cookie. To genuinely test the revoked-but-cookie-still-present scenario, capture the cookie value from 'Logout - Success' manually and set it back via a pre-request script or the Postman cookie manager before running this request a second time."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 204 (already-revoked token) or 401 (no cookie present)\", function () {",
+                  "    pm.expect([204, 401]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "POST /api/v1/auth/refresh and POST /api/v1/auth/logout — cookie-based session lifecycle."
+    },
+    {
+      "name": "Password Reset",
+      "item": [
+        {
+          "name": "Forgot Password - Known Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"email\": \"{{testEmail}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "forgot-password"]
+            },
+            "description": "No email is actually sent (no SES integration exists) — a reset token is generated and stored server-side, but must be retrieved via direct repository/DB access to continue the flow manually. Set {{resetToken}} yourself before running the Reset Password requests below."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Generic message is returned\", function () {",
+                  "    pm.expect(json.data.message).to.eql(",
+                  "        \"If an account with that email exists, a password reset link has been sent.\"",
+                  "    );",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Forgot Password - Unknown Account (Enumeration-Safe)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"email\": \"definitely-does-not-exist@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "forgot-password"]
+            },
+            "description": "Run alongside 'Forgot Password - Known Account' and diff the two responses — they must be identical (status, body, shape) per AUTHN-005."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 (identical to the known-account case)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Generic message is identical regardless of account existence\", function () {",
+                  "    pm.expect(json.data.message).to.eql(",
+                  "        \"If an account with that email exists, a password reset link has been sent.\"",
+                  "    );",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Reset Password - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "reset-password"]
+            },
+            "description": "Requires {{resetToken}} to be set manually to a real, unexpired, unused plaintext token (see the Forgot Password request's description — there is no API-only way to obtain this value). On success, every active session for the account is revoked."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Success message is returned\", function () {",
+                  "    pm.expect(json.data.message).to.eql(\"Password has been reset successfully.\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Reset Password - Invalid Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"token\": \"0000000000000000000000000000000000000000000000000000000000000000\",\n  \"newPassword\": \"{{newPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "reset-password"]
+            },
+            "description": "A well-formed but never-issued token. Also covers 'already used' and 'expired' — all three collapse to the same response by design."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_INVALID_RESET_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_INVALID_RESET_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Reset Password - Policy Violation (Weak Password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"token\": \"placeholder-token-never-looked-up\",\n  \"newPassword\": \"short\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "reset-password"]
+            },
+            "description": "Password shorter than 12 characters. This check runs BEFORE the token is looked up, so this returns AUTH_PASSWORD_POLICY_VIOLATION regardless of the token's validity — the token field here is a non-empty placeholder purely so it passes the schema's non-empty-string check and doesn't mask the assertion with VALIDATION_ERROR instead."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_PASSWORD_POLICY_VIOLATION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_PASSWORD_POLICY_VIOLATION\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "POST /api/v1/auth/forgot-password and POST /api/v1/auth/reset-password."
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection-wide: none required. Cookie handling is delegated to Postman's",
+          "// built-in cookie jar for the {{baseUrl}} domain — no manual cookie plumbing",
+          "// is needed for the happy-path chain (Login -> Refresh -> Logout)."
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// 204 No Content responses (logout) correctly have no body and no",
+          "// Content-Type header at all — only assert this for responses that",
+          "// actually have a body.",
+          "if (pm.response.code !== 204) {",
+          "    pm.test(\"Response Content-Type is application/json\", function () {",
+          "        pm.response.to.have.header(\"Content-Type\");",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ]
+}

@@ -5,7 +5,7 @@
 // on this datasource/generator being declared exactly once.
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/client"
+  output   = "./generated/client"
 }
 
 datasource db {

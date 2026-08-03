@@ -23,6 +23,7 @@ coverage/
 
 # Prisma
 apps/api/src/database/generated/
+apps/api/src/database/schema.prisma
 
 # IDE
 .vscode/*

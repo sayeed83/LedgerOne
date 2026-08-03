@@ -6,7 +6,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCHEMA="$ROOT_DIR/apps/api/src/database/generated/schema.prisma"
+SCHEMA="$ROOT_DIR/apps/api/src/database/schema.prisma"
 
 npx tsx "$ROOT_DIR/scripts/db/compose-schema.ts"
 

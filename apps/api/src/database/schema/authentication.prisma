@@ -1,0 +1,135 @@
+// Authentication module — Prisma schema.
+// Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
+// Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
+// Delete). Business rules: Authentication Module Specification (approved).
+//
+// Module ownership (spec §2/§16): this module owns Credentials, Sessions
+// (refresh tokens), Login (attempts/lockout), and Passwords (reset tokens); MFA
+// fields live on UserCredential. Canonical user profile/status (User
+// Management), Role/Permission (Authorization), and Tenant/Company/Branch
+// (Organization) are owned by other modules and are never joined here.
+//
+// Cross-module references (FK-002): `tenantId` and the reference to User
+// Management's `users` row are plain indexed columns with no DB-level foreign
+// key — the tenant registry and `users` table live in other modules' schema
+// files, and cross-module FKs are forbidden regardless of convenience.
+
+/// Login identity + credential record. Tenant-owned (MT-001). One-to-one with
+/// User Management's `users` row via `userUuid` (cross-module, FK-002 — no DB
+/// FK, never joined directly).
+model UserCredential {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to User Management's `users.uuid` (FK-002) — no DB-level FK.
+  userUuid String @unique @db.Char(36) @map("user_uuid")
+
+  email        String @db.VarChar(255) @map("email")
+  passwordHash String @db.VarChar(255) @map("password_hash")
+
+  isMfaEnabled Boolean @default(false) @map("is_mfa_enabled")
+  /// Speakeasy TOTP secret (ADR-002), application-layer encrypted at rest (SEC-004).
+  mfaSecret String? @db.VarChar(255) @map("mfa_secret")
+
+  failedLoginCount Int       @default(0) @db.UnsignedInt @map("failed_login_count")
+  lockedUntil      DateTime? @db.DateTime(3) @map("locked_until")
+  lastLoginAt      DateTime? @db.DateTime(3) @map("last_login_at")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  /// Nullable: system-provisioned rows (e.g. invite flow) have no human actor yet.
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  loginAttempts       LoginAttempt[]
+
+  @@unique([tenantId, email, deletedAt], map: "uq_user_credentials_tenant_email_deleted_at")
+  @@index([tenantId], map: "idx_user_credentials_tenant_id")
+  @@map("user_credentials")
+}
+
+/// Server-side revocable session record for one refresh JWT (`jti`). Tenant-owned.
+/// Hard-delete-eligible exception (SD-002 — "expired session tokens" is the
+/// handbook's own named example): no `deleted_at`; an expiry/revocation cleanup
+/// job purges rows. No `createdBy`/`updatedBy`: rows are system-issued at login,
+/// never user-edited.
+model RefreshToken {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  userCredentialId BigInt         @db.UnsignedBigInt @map("user_credential_id")
+  userCredential   UserCredential @relation(fields: [userCredentialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// JWT `jti` claim of the RS256-signed refresh token (ADR-001) — the revocation deny-list lookup key (JWT-005).
+  jti           String    @unique @db.VarChar(255) @map("jti")
+  expiresAt     DateTime  @db.DateTime(3) @map("expires_at")
+  revokedAt     DateTime? @db.DateTime(3) @map("revoked_at")
+  createdFromIp String    @db.VarChar(45) @map("created_from_ip")
+
+  createdAt DateTime @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime @updatedAt @db.DateTime(3) @map("updated_at")
+
+  @@index([userCredentialId], map: "idx_refresh_tokens_user_credential_id")
+  @@index([tenantId, userCredentialId, revokedAt], map: "idx_refresh_tokens_active_sessions")
+  @@index([expiresAt], map: "idx_refresh_tokens_expires_at")
+  @@map("refresh_tokens")
+}
+
+/// Single-use password reset token (PWD-006). Tenant-owned. Hard-delete-eligible
+/// exception (SD-002, same rationale as RefreshToken): no `deleted_at`. No
+/// `createdBy`/`updatedBy`: system-issued.
+model PasswordResetToken {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  userCredentialId BigInt         @db.UnsignedBigInt @map("user_credential_id")
+  userCredential   UserCredential @relation(fields: [userCredentialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Stored hashed, never plaintext.
+  tokenHash String    @unique @db.VarChar(255) @map("token_hash")
+  expiresAt DateTime  @db.DateTime(3) @map("expires_at")
+  usedAt    DateTime? @db.DateTime(3) @map("used_at")
+
+  createdAt DateTime @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime @updatedAt @db.DateTime(3) @map("updated_at")
+
+  @@index([userCredentialId], map: "idx_password_reset_tokens_user_credential_id")
+  @@index([tenantId, userCredentialId, expiresAt], map: "idx_password_reset_tokens_active_lookup")
+  @@map("password_reset_tokens")
+}
+
+/// Rolling record of login attempts feeding account lockout (BRUTE-001) and
+/// credential-stuffing detection (BRUTE-004). Tenant-owned. `userCredentialId`
+/// is nullable — an attempt against a non-existent email must still be recorded
+/// for per-source-IP detection without linking to any credential, consistent
+/// with AUTHN-005's enumeration-prevention requirement. Hard-delete-eligible
+/// exception (SD-002, same rationale as RefreshToken): no `deleted_at`; a
+/// scheduled job purges rows outside the rolling detection window. No
+/// `createdBy`/`updatedBy`: system-generated.
+model LoginAttempt {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  userCredentialId BigInt?         @db.UnsignedBigInt @map("user_credential_id")
+  userCredential   UserCredential? @relation(fields: [userCredentialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  emailAttempted String  @db.VarChar(255) @map("email_attempted")
+  isSuccessful   Boolean @map("is_successful")
+  sourceIp       String  @db.VarChar(45) @map("source_ip")
+  userAgent      String? @db.VarChar(512) @map("user_agent")
+
+  createdAt DateTime @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime @updatedAt @db.DateTime(3) @map("updated_at")
+
+  @@index([userCredentialId], map: "idx_login_attempts_user_credential_id")
+  @@index([tenantId, emailAttempted, createdAt], map: "idx_login_attempts_lockout_lookup")
+  @@index([tenantId, sourceIp, createdAt], map: "idx_login_attempts_source_ip_lookup")
+  @@map("login_attempts")
+}
