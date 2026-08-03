@@ -11,6 +11,21 @@
     "node": ">=22.0.0",
     "npm": ">=10.0.0"
   },
-  "scripts": {},
-  "devDependencies": {}
+  "scripts": {
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "lint": "npm run lint:boundaries && npm run lint:imports && npm run lint -w apps/web",
+    "lint:boundaries": "tsx scripts/lint/check-layer-boundaries.ts",
+    "lint:imports": "tsx scripts/lint/check-module-imports.ts",
+    "db:migrate": "bash scripts/db/migrate.sh",
+    "db:seed": "bash scripts/db/seed.sh",
+    "db:compose-schema": "tsx scripts/db/compose-schema.ts",
+    "setup": "bash scripts/setup/bootstrap-dev-environment.sh"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "tsx": "^4.19.0"
+  }
 }
