@@ -10,12 +10,14 @@
 
 ## Active Phase
 
-**Phase:** 00 — Setup
+**Phase:** 02 — Platform
 
 **Status:** In progress
 
-**In progress:** Workspace configuration (root-level `tsconfig.base.json`, `.gitignore`, `.editorconfig`, `.prettierrc`, `.prettierignore`, `.nvmrc`, `.npmrc`, `README.md`, `LICENSE`, `.env.example`) completed and awaiting approval. No backend, frontend, or business-module code has been generated yet.
+**Completed:** Phase 00 — Setup (workspace/tooling scaffolding, lint/DB scripts, local dev environment verified end-to-end). Phase 01 — Foundation is deliberately deferred (not started) — the Platform phase was reprioritized ahead of it per explicit direction, since Authentication has no dependency on the ledger/domain-primitive work Foundation covers.
+
+**In progress:** Authentication module. Business Analysis (`engineering/prompts/02_platform/00_auth.md`) reviewed and approved. Architectural decisions recorded: ADR-001 (JWT — RS256, `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY`/`REFRESH_TOKEN_PRIVATE_KEY`/`REFRESH_TOKEN_PUBLIC_KEY`), ADR-002 (MFA — Speakeasy/TOTP). Module ownership boundaries confirmed: Authentication (credentials, sessions, login, passwords, MFA), User Management (profile, status, personal information — new module, not yet scaffolded), Authorization (roles, permissions), Organization (tenant, company, branch, department). Specification updated accordingly; proceeding to database design next (`12_MODULE_DEVELOPMENT_GUIDE.md` Ch.8).
 
 **Blocked:** _None_
 
-**Next up:** Once approved, continue Phase 00 setup per [../prompts/00_setup/](../prompts/00_setup/) (workspace app/package scaffolding, tooling scripts).
+**Next up:** Authentication module database design (Ch.8 — Database Planning), then API Planning (Ch.9), Frontend Planning (Ch.10), and Folder Creation (Ch.11) — including scaffolding the new User Management module — before Backend/Frontend Development (Ch.12–13) can begin per the Definition of Ready gate (Ch.35). No implementation code yet.

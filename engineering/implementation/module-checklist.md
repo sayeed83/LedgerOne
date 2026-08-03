@@ -27,8 +27,8 @@
 
 | Module | Checklist Complete | Notes |
 |---|---|---|
-| Foundation | No | |
-| Platform | No | |
+| Foundation | No | Deferred — Platform reprioritized ahead of it |
+| Platform | No | Authentication: spec approved, ADR-001/002 recorded, proceeding to DB design |
 | Accounting | No | |
 | Inventory | No | |
 | Sales | No | |

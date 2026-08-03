@@ -8,7 +8,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCHEMA="$ROOT_DIR/apps/api/src/database/generated/schema.prisma"
 
-tsx "$ROOT_DIR/scripts/db/compose-schema.ts"
+npx tsx "$ROOT_DIR/scripts/db/compose-schema.ts"
+
+set -a
+# shellcheck disable=SC1091
+source "$ROOT_DIR/.env"
+set +a
 
 cd "$ROOT_DIR/apps/api"
 npx prisma migrate dev --schema "$SCHEMA" "$@"

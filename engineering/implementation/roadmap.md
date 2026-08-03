@@ -12,9 +12,9 @@
 
 | # | Phase | Goal | Status |
 |---|---|---|---|
-| 00 | Setup | Repo, tooling, environment scaffolding | Not Started |
+| 00 | Setup | Repo, tooling, environment scaffolding | Done |
 | 01 | Foundation | Core domain primitives, ledger fundamentals | Not Started |
-| 02 | Platform | Auth, tenancy, config, observability | Not Started |
+| 02 | Platform | Auth, tenancy, config, observability | In Progress |
 | 03 | Accounting | Chart of accounts, journal entries, GL | Not Started |
 | 04 | Inventory | Items, stock, warehouses | Not Started |
 | 05 | Sales | Customers, sales orders, invoices | Not Started |

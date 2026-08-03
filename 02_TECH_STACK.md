@@ -32,10 +32,11 @@
 - Zod
 
 ### Authentication
-- JWT
+- JWT (RS256)
 - Refresh Token
 - Passport.js
 - Argon2
+- Speakeasy (MFA/TOTP — ADR-002)
 
 ### Authorization
 - RBAC

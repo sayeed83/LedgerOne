@@ -1,0 +1,14 @@
+// Prisma datasource/generator configuration and the shared "standard
+// columns" fragment every table starts from (06_DATABASE_STANDARDS.md
+// Section 2.3, 03_ARCHITECTURE.md Decision 8.9.2). Composed first by
+// scripts/db/compose-schema.ts so every module schema file below can rely
+// on this datasource/generator being declared exactly once.
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
