@@ -83,3 +83,75 @@ export class FiscalPeriodNotOpenError extends DomainError {
     super(`Fiscal Period '${fiscalPeriodUuid}' is not Open (current status: '${status}').`);
   }
 }
+
+/** Raised when a lookup by `uuid` matches no Currency row (00_BUSINESS_RULES.md Ch.7) — Currency is platform-owned reference data, so this is a plain not-found, not a tenant-scoped one (no MT-002 re-assertion applies). */
+export class CurrencyNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Currency '${identifier}' was not found.`);
+  }
+}
+
+/**
+ * Raised when a requested status change does not follow the Currency
+ * lifecycle (00_BUSINESS_RULES.md Ch.7.5/7.8): Active ↔ Inactive.
+ */
+export class InvalidCurrencyStatusTransitionError extends DomainError {
+  constructor(public readonly from: string, public readonly to: string) {
+    super(`Currency cannot transition from '${from}' to '${to}'.`);
+  }
+}
+
+/** Raised by `DecimalValue.create` when a raw string is not a well-formed decimal number (03_ARCHITECTURE.md Ch.7.3.2/05_CODING_STANDARDS.md Ch.15.4 — a Value Object's invariant is enforced by the object itself at construction, not by external validation that could be skipped). */
+export class InvalidDecimalValueError extends DomainError {
+  constructor(public readonly raw: string) {
+    super(`'${raw}' is not a valid decimal value.`);
+  }
+}
+
+/** Raised by createCurrency when the ISO code already belongs to another (non-deleted) Currency (00_BUSINESS_RULES.md Ch.7.3 — Currency "owns" its ISO code; `currencies.iso_code` is a plain unique column with no `deletedAt` composite, a deliberate never-reuse decision, 06_DATABASE_STANDARDS.md SD-004). */
+export class DuplicateCurrencyIsoCodeError extends DomainError {
+  constructor(public readonly isoCode: string) {
+    super(`Currency ISO code '${isoCode}' already exists.`);
+  }
+}
+
+/** Raised by createExchangeRate when a referenced Currency is not Active (00_BUSINESS_RULES.md Ch.31.8 — "currency pair must reference two distinct, Active currencies"). */
+export class CurrencyNotActiveError extends DomainError {
+  constructor(public readonly currencyUuid: string, public readonly status: string) {
+    super(`Currency '${currencyUuid}' is not Active (current status: '${status}').`);
+  }
+}
+
+/** Raised when a lookup by `uuid` matches no Exchange Rate row (00_BUSINESS_RULES.md Ch.31), scoped to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). */
+export class ExchangeRateNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Exchange Rate '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by createExchangeRate when the `from` and `to` Currency are the same (00_BUSINESS_RULES.md Ch.31.8 — "currency pair must reference two distinct... currencies"). */
+export class ExchangeRateCurrencyPairNotDistinctError extends DomainError {
+  constructor(public readonly currencyUuid: string) {
+    super(`Exchange Rate 'from' and 'to' currencies must be distinct; both were '${currencyUuid}'.`);
+  }
+}
+
+/** Raised by createExchangeRate when the supplied rate value is not positive (00_BUSINESS_RULES.md Ch.31.8 — "Rate value must be a positive number"). */
+export class InvalidExchangeRateValueError extends DomainError {
+  constructor(public readonly rate: string) {
+    super(`Exchange Rate value '${rate}' must be a positive number.`);
+  }
+}
+
+/** Raised by createExchangeRate when an Exchange Rate already exists for the same currency pair and effective date. Not explicit business-rule text in Ch.31 itself — enforced here as a direct consequence of the Database milestone's own `uq_exchange_rates_tenant_pair_effective_date_deleted_at` uniqueness constraint (06_DATABASE_STANDARDS.md SD-004), so a duplicate attempt fails with a typed Domain error instead of a raw, leaked Prisma unique-constraint violation. */
+export class DuplicateExchangeRateError extends DomainError {
+  constructor(
+    public readonly fromCurrencyUuid: string,
+    public readonly toCurrencyUuid: string,
+    public readonly effectiveDate: Date,
+  ) {
+    super(
+      `An Exchange Rate for currency pair '${fromCurrencyUuid}' -> '${toCurrencyUuid}' effective '${effectiveDate.toISOString()}' already exists.`,
+    );
+  }
+}

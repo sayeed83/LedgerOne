@@ -2,14 +2,15 @@
 // Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
 // Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
 // Delete). Business rules: 00_BUSINESS_RULES.md Ch.5 (Financial Year), Ch.6
-// (Fiscal Period).
+// (Fiscal Period), Ch.7 (Currency), Ch.31 (Exchange Rate).
 //
 // Module ownership: this module owns Financial Year (the annual reporting-cycle
-// definition, Ch.5) and Fiscal Period (the monthly-typical subdivision of a
-// Financial Year, Ch.6) — Database milestone only for both. Financial Closing
-// (Ch.32), Chart of Accounts (Ch.17), Currency (Ch.7), and Journal Entries
-// (Ch.19-20) are distinct entities/chapters and are explicitly not part of
-// this schema yet.
+// definition, Ch.5), Fiscal Period (the monthly-typical subdivision of a
+// Financial Year, Ch.6), Currency (Ch.7), and Exchange Rate (Ch.31) —
+// Database + Repository milestone for Currency/Exchange Rate. Financial
+// Closing (Ch.32), Chart of Accounts (Ch.17), and Journal Entries (Ch.19-20)
+// are distinct entities/chapters and are explicitly not part of this schema
+// yet.
 //
 // Cross-module references (FK-002): `companyUuid` is a plain indexed column
 // with no DB-level foreign key — the canonical Company row lives in
@@ -17,10 +18,34 @@
 // forbidden regardless of convenience, mirroring User Management's own
 // `companyUuid` reference into Organization.
 //
-// In-module references (FK-001/FK-003/FK-004): FiscalPeriod.financialYearId is
-// a real, RESTRICT FK to FinancialYear.id — both models live in this same
-// module schema file, so the cross-module prohibition (FK-002) does not apply,
-// mirroring Organization's Branch/Department -> Company in-module FKs.
+// In-module references (FK-001/FK-003/FK-004): FiscalPeriod.financialYearId
+// and ExchangeRate.fromCurrencyId/toCurrencyId are real, RESTRICT FKs — both
+// sides of each relationship live in this same module schema file, so the
+// cross-module prohibition (FK-002) does not apply, mirroring Organization's
+// Branch/Department -> Company in-module FKs.
+//
+// Currency is platform-owned reference data (00_BUSINESS_RULES.md Ch.7.5 —
+// "largely static platform-owned reference data... not created or deleted by
+// end users in the ordinary course of business"), mirroring Authorization's
+// Permission (MT-005): no `tenant_id`, and `created_by`/`updated_by` are
+// omitted per 06_DATABASE_STANDARDS.md Ch.2.3's documented exception for a
+// platform reference table with no per-row mutation history to attribute.
+// Exchange Rate, by contrast, is tenant-owned (Ch.31.5 — rates are "entered,
+// manually or via external feed" by/for a specific tenant's operations, the
+// same posture as Financial Year/Fiscal Period), so it carries `tenant_id`
+// (MT-001) and full audit attribution.
+//
+// Deliberately NOT modeled here: a "Company activates Currency" join/
+// activation table. Ch.7.8/7.10 describe the relationship ("a transaction's
+// Currency must be one explicitly activated for the Company") but no chapter
+// names or schemas the join entity itself — inventing one would be guessing
+// at a shape the handbook never specifies. Flagged as a Handbook Deviation
+// (documented in the milestone report) rather than implemented.
+//
+// Also NOT modeled: an `isBase`/"base currency" flag on Currency itself —
+// CMP-002 places the base-currency fact on Company (`baseCurrency`), not on
+// Currency, so Company's ERD attribute is a future Organization-schema
+// concern, not this module's.
 
 /// The annual accounting/reporting cycle a Company prepares its statutory
 /// financial statements against (00_BUSINESS_RULES.md Ch.5.1). Tenant-owned
@@ -121,4 +146,95 @@ enum FiscalPeriodStatus {
   REOPENED
 
   @@map("fiscal_period_status")
+}
+
+/// A unit of monetary value LedgerOne supports for transactions/reporting
+/// (00_BUSINESS_RULES.md Ch.7.1) — ISO code, symbol, and decimal-precision
+/// convention (Ch.7.3, CUR-003). Platform-owned reference data (Ch.7.5,
+/// mirrors Authorization's Permission/MT-005): no `tenant_id`, no
+/// `created_by`/`updated_by` (06_DATABASE_STANDARDS.md Ch.2.3 documented
+/// exception). `isoCode` is unique with no `deletedAt` composite (unlike
+/// FinancialYear/FiscalPeriod's date-range uniques) — an ISO 4217 code is
+/// never intended to be reissued to a different Currency row after a
+/// deactivation, a deliberate never-reuse decision (06_DATABASE_STANDARDS.md
+/// SD-004 exception), documented here rather than assumed. Database +
+/// Repository milestone only — Company-Currency activation (Ch.7.8/7.10) is
+/// explicitly not modeled (see file header) and Business-layer validation
+/// (CUR-001/002/003) is a later milestone.
+model Currency {
+  id   BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid String @unique @db.Char(36) @map("uuid")
+
+  /// ISO 4217 currency code (e.g. USD, EUR, INR) — 00_BUSINESS_RULES.md Ch.7.3.
+  isoCode String @unique @db.VarChar(3) @map("iso_code")
+  /// Full currency name (e.g. "US Dollar") — Ch.7.3.
+  name String @db.VarChar(100) @map("name")
+  /// Display symbol (e.g. "$", "€") — Ch.7.3.
+  symbol String @db.VarChar(10) @map("symbol")
+  /// Decimal precision convention for amounts in this currency (Ch.7.3/CUR-003) — e.g. 2 for USD, 0 for JPY.
+  decimalPrecision Int @db.UnsignedTinyInt @map("decimal_precision")
+
+  /// Currency lifecycle state — Active/Inactive (00_BUSINESS_RULES.md Ch.31.8 references "Active currencies"; an Inactive Currency cannot be selected on a transaction, Ch.7.8, or referenced by a new Exchange Rate, Ch.31.8).
+  status CurrencyStatus @default(ACTIVE) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  exchangeRatesFrom ExchangeRate[] @relation("ExchangeRateFromCurrency")
+  exchangeRatesTo   ExchangeRate[] @relation("ExchangeRateToCurrency")
+
+  @@index([status], map: "idx_currencies_status")
+  @@map("currencies")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.7.5/7.8 Currency lifecycle (05_CODING_STANDARDS.md Ch.26.4).
+enum CurrencyStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("currency_status")
+}
+
+/// The defined conversion factor between two Currencies as of a specific
+/// date (00_BUSINESS_RULES.md Ch.31.1) — currency pair, rate value, and
+/// effective date (Ch.31.3). Tenant-owned (MT-001) — rates are entered per
+/// Ch.31.5 for a tenant's own operations, mirroring Financial Year/Fiscal
+/// Period's tenant ownership rather than Currency's platform ownership.
+/// `fromCurrencyId`/`toCurrencyId` are real, in-module RESTRICT FKs
+/// (FK-001/FK-003/FK-004) to Currency.id, since both models live in this same
+/// schema file. Forms a historical, immutable time series (Ch.31.5, EXR-002)
+/// — no update/remove method is provided at the Repository layer (see
+/// interface); a correction is a new, dated rate row, a Business-layer
+/// concern for a later milestone. Database + Repository milestone only —
+/// EXR-001's "most recently effective prior rate" lookup (Ch.31.12) and
+/// EXR-002's post-transaction immutability enforcement are explicitly
+/// Business-layer concerns, not implemented here.
+model ExchangeRate {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  fromCurrencyId BigInt   @db.UnsignedBigInt @map("from_currency_id")
+  fromCurrency   Currency @relation("ExchangeRateFromCurrency", fields: [fromCurrencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  toCurrencyId BigInt   @db.UnsignedBigInt @map("to_currency_id")
+  toCurrency   Currency @relation("ExchangeRateToCurrency", fields: [toCurrencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Conversion factor, from -> to (00_BUSINESS_RULES.md Ch.31.3/31.8 — must be positive; enforced at the Business layer, not a DB constraint). DECIMAL(20,10): no handbook-documented precision/scale exists for rate values (flagged as a Handbook Deviation, decided inline) — wider than a monetary-amount DECIMAL since a rate is a ratio, not a currency-precision amount (Ch.7.3/CUR-003 governs amounts, not rates).
+  rate Decimal @db.Decimal(20, 10) @map("rate")
+  /// The date this rate is effective as-of (00_BUSINESS_RULES.md Ch.31.1/31.7 EXR-001).
+  effectiveDate DateTime @db.DateTime(3) @map("effective_date")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([tenantId, fromCurrencyId, toCurrencyId, effectiveDate, deletedAt], map: "uq_exchange_rates_tenant_pair_effective_date_deleted_at")
+  @@index([tenantId, fromCurrencyId, toCurrencyId], map: "idx_exchange_rates_tenant_pair")
+  @@index([fromCurrencyId], map: "idx_exchange_rates_from_currency_id")
+  @@index([toCurrencyId], map: "idx_exchange_rates_to_currency_id")
+  @@map("exchange_rates")
 }

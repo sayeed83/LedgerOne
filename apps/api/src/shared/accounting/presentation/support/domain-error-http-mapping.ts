@@ -17,6 +17,15 @@ import {
   FiscalPeriodOverlapError,
   FiscalPeriodClosedError,
   FiscalPeriodNotOpenError,
+  CurrencyNotFoundError,
+  InvalidCurrencyStatusTransitionError,
+  DuplicateCurrencyIsoCodeError,
+  CurrencyNotActiveError,
+  ExchangeRateNotFoundError,
+  ExchangeRateCurrencyPairNotDistinctError,
+  InvalidExchangeRateValueError,
+  DuplicateExchangeRateError,
+  InvalidDecimalValueError,
 } from "../../business/accounting-errors";
 
 export interface HttpErrorMapping {
@@ -51,6 +60,33 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof FiscalPeriodNotOpenError) {
     return { status: 403, code: "ACC_FISCAL_PERIOD_NOT_OPEN" };
+  }
+  if (error instanceof CurrencyNotFoundError) {
+    return { status: 404, code: "ACC_CURRENCY_NOT_FOUND" };
+  }
+  if (error instanceof InvalidCurrencyStatusTransitionError) {
+    return { status: 409, code: "ACC_INVALID_CURRENCY_STATUS_TRANSITION" };
+  }
+  if (error instanceof DuplicateCurrencyIsoCodeError) {
+    return { status: 409, code: "ACC_DUPLICATE_CURRENCY_ISO_CODE" };
+  }
+  if (error instanceof CurrencyNotActiveError) {
+    return { status: 403, code: "ACC_CURRENCY_NOT_ACTIVE" };
+  }
+  if (error instanceof ExchangeRateNotFoundError) {
+    return { status: 404, code: "ACC_EXCHANGE_RATE_NOT_FOUND" };
+  }
+  if (error instanceof ExchangeRateCurrencyPairNotDistinctError) {
+    return { status: 422, code: "ACC_EXCHANGE_RATE_PAIR_NOT_DISTINCT" };
+  }
+  if (error instanceof InvalidExchangeRateValueError) {
+    return { status: 422, code: "ACC_INVALID_EXCHANGE_RATE_VALUE" };
+  }
+  if (error instanceof DuplicateExchangeRateError) {
+    return { status: 409, code: "ACC_DUPLICATE_EXCHANGE_RATE" };
+  }
+  if (error instanceof InvalidDecimalValueError) {
+    return { status: 422, code: "ACC_INVALID_DECIMAL_VALUE" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

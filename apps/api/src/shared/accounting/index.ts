@@ -20,6 +20,15 @@ import { listFiscalPeriodsController } from "./presentation/controllers/v1/list-
 import { softCloseFiscalPeriodController } from "./presentation/controllers/v1/soft-close-fiscal-period.controller";
 import { closeFiscalPeriodController } from "./presentation/controllers/v1/close-fiscal-period.controller";
 import { reopenFiscalPeriodController } from "./presentation/controllers/v1/reopen-fiscal-period.controller";
+import { createCurrencyController } from "./presentation/controllers/v1/create-currency.controller";
+import { getCurrencyController } from "./presentation/controllers/v1/get-currency.controller";
+import { updateCurrencyController } from "./presentation/controllers/v1/update-currency.controller";
+import { listCurrenciesController } from "./presentation/controllers/v1/list-currencies.controller";
+import { activateCurrencyController } from "./presentation/controllers/v1/activate-currency.controller";
+import { deactivateCurrencyController } from "./presentation/controllers/v1/deactivate-currency.controller";
+import { createExchangeRateController } from "./presentation/controllers/v1/create-exchange-rate.controller";
+import { getExchangeRateController } from "./presentation/controllers/v1/get-exchange-rate.controller";
+import { listExchangeRatesController } from "./presentation/controllers/v1/list-exchange-rates.controller";
 
 export function createAccountingRouter(deps: AccountingDependencies): Router {
   const router = Router();
@@ -49,6 +58,26 @@ export function createAccountingRouter(deps: AccountingDependencies): Router {
   router.post("/fiscal-periods/:fiscalPeriodUuid/soft-close", softCloseFiscalPeriodController(deps));
   router.post("/fiscal-periods/:fiscalPeriodUuid/close", closeFiscalPeriodController(deps));
   router.post("/fiscal-periods/:fiscalPeriodUuid/reopen", reopenFiscalPeriodController(deps));
+
+  // --- Currency ---
+  // No `X-Tenant-Id` header on any of these — Currency is platform-owned
+  // reference data (00_BUSINESS_RULES.md Ch.7.5, 06_DATABASE_STANDARDS.md
+  // MT-005), mirroring Authorization's `/permissions` mount.
+  router.post("/currencies", createCurrencyController(deps));
+  router.get("/currencies", listCurrenciesController(deps));
+  router.get("/currencies/:currencyUuid", getCurrencyController(deps));
+  router.put("/currencies/:currencyUuid", updateCurrencyController(deps));
+  router.post("/currencies/:currencyUuid/activate", activateCurrencyController(deps));
+  router.post("/currencies/:currencyUuid/deactivate", deactivateCurrencyController(deps));
+
+  // --- Exchange Rate ---
+  // Tenant-owned (MT-001), unlike Currency above — every route requires
+  // `X-Tenant-Id`. No update/remove endpoint — an Exchange Rate is an
+  // immutable historical time series once created (00_BUSINESS_RULES.md
+  // Ch.31.5/EXR-002); a correction is a new, dated rate entry.
+  router.post("/exchange-rates", createExchangeRateController(deps));
+  router.get("/exchange-rates", listExchangeRatesController(deps));
+  router.get("/exchange-rates/:exchangeRateUuid", getExchangeRateController(deps));
 
   return router;
 }

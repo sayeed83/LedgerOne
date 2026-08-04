@@ -12,6 +12,9 @@ import {
   FinancialYearStatus as PrismaFinancialYearStatus,
   FiscalPeriod as FiscalPeriodModel,
   FiscalPeriodStatus as PrismaFiscalPeriodStatus,
+  Currency as CurrencyModel,
+  CurrencyStatus as PrismaCurrencyStatus,
+  ExchangeRate as ExchangeRateModel,
 } from "../../../database/generated/client";
 import {
   FinancialYear,
@@ -23,9 +26,17 @@ import {
   CreateFiscalPeriodProps,
   UpdateFiscalPeriodProps,
 } from "../domain/aggregates/fiscal-period.aggregate";
+import { Currency, CreateCurrencyProps, UpdateCurrencyProps } from "../domain/aggregates/currency.aggregate";
+import { ExchangeRate, CreateExchangeRateProps } from "../domain/entities/exchange-rate.entity";
+import { DecimalValue } from "../domain/value-objects/decimal-value.value-object";
 import { FinancialYearStatus } from "../domain/enums/financial-year-status.enum";
 import { FiscalPeriodStatus } from "../domain/enums/fiscal-period-status.enum";
-import { FinancialYearNotFoundError, FiscalPeriodNotFoundError } from "../domain/errors/accounting.errors";
+import { CurrencyStatus } from "../domain/enums/currency-status.enum";
+import {
+  FinancialYearNotFoundError,
+  FiscalPeriodNotFoundError,
+  CurrencyNotFoundError,
+} from "../domain/errors/accounting.errors";
 import { IAccountingRepository, RepositoryTransaction } from "../domain/interfaces/accounting-repository.interface";
 
 function toFinancialYearDomain(row: FinancialYearModel): FinancialYear {
@@ -55,6 +66,41 @@ function toFiscalPeriodDomain(row: FiscalPeriodModel): FiscalPeriod {
     row.startDate,
     row.endDate,
     row.status as unknown as FiscalPeriodStatus,
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+function toCurrencyDomain(row: CurrencyModel): Currency {
+  return new Currency(
+    row.id,
+    row.uuid,
+    row.isoCode,
+    row.name,
+    row.symbol,
+    row.decimalPrecision,
+    row.status as unknown as CurrencyStatus,
+    row.createdAt,
+    row.updatedAt,
+    row.deletedAt,
+  );
+}
+
+function toExchangeRateDomain(row: ExchangeRateModel): ExchangeRate {
+  return new ExchangeRate(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.fromCurrencyId,
+    row.toCurrencyId,
+    // `.toFixed()` (not `.toString()`) guarantees plain fixed-point decimal
+    // notation, never exponential notation, as the input to `DecimalValue`
+    // (decimal-value.value-object.ts's pattern only accepts fixed notation).
+    DecimalValue.create(row.rate.toFixed()),
+    row.effectiveDate,
     row.createdAt,
     row.updatedAt,
     row.createdBy,
@@ -324,5 +370,136 @@ export class PrismaAccountingRepository implements IAccountingRepository {
     }
     const row = await client.fiscalPeriod.findFirst({ where: { tenantId, uuid } });
     return toFiscalPeriodDomain(row as FiscalPeriodModel);
+  }
+
+  // Currency is platform-owned reference data (06_DATABASE_STANDARDS.md
+  // MT-005, mirrors Authorization's Permission) — no `tenantId` on any
+  // method. `id` is never accepted from outside this file (PK-003) —
+  // mutations key on `uuid`.
+
+  async createCurrency(props: CreateCurrencyProps, tx?: RepositoryTransaction): Promise<Currency> {
+    const row = await this.client(tx).currency.create({
+      data: {
+        uuid: newUuid(),
+        isoCode: props.isoCode,
+        name: props.name,
+        symbol: props.symbol,
+        decimalPrecision: props.decimalPrecision,
+      },
+    });
+    return toCurrencyDomain(row);
+  }
+
+  async findCurrencyByUuid(uuid: string): Promise<Currency | null> {
+    const row = await prisma.currency.findFirst({ where: { uuid, deletedAt: null } });
+    return row ? toCurrencyDomain(row) : null;
+  }
+
+  async findCurrencyByIsoCode(isoCode: string): Promise<Currency | null> {
+    const row = await prisma.currency.findFirst({ where: { isoCode, deletedAt: null } });
+    return row ? toCurrencyDomain(row) : null;
+  }
+
+  async listCurrencies(status?: CurrencyStatus): Promise<Currency[]> {
+    const rows = await prisma.currency.findMany({
+      where: {
+        status: status ? (status as unknown as PrismaCurrencyStatus) : undefined,
+        deletedAt: null,
+      },
+      orderBy: { isoCode: "asc" },
+    });
+    return rows.map(toCurrencyDomain);
+  }
+
+  async updateCurrency(uuid: string, props: UpdateCurrencyProps, tx?: RepositoryTransaction): Promise<Currency> {
+    const client = this.client(tx);
+    const { count } = await client.currency.updateMany({
+      where: { uuid, deletedAt: null },
+      data: {
+        name: props.name,
+        symbol: props.symbol,
+        decimalPrecision: props.decimalPrecision,
+      },
+    });
+    if (count === 0) {
+      throw new CurrencyNotFoundError(uuid);
+    }
+    const row = await client.currency.findFirst({ where: { uuid } });
+    return toCurrencyDomain(row as CurrencyModel);
+  }
+
+  async activateCurrency(uuid: string, tx?: RepositoryTransaction): Promise<Currency> {
+    const client = this.client(tx);
+    const { count } = await client.currency.updateMany({
+      where: { uuid, deletedAt: null },
+      data: { status: PrismaCurrencyStatus.ACTIVE },
+    });
+    if (count === 0) {
+      throw new CurrencyNotFoundError(uuid);
+    }
+    const row = await client.currency.findFirst({ where: { uuid } });
+    return toCurrencyDomain(row as CurrencyModel);
+  }
+
+  async deactivateCurrency(uuid: string, tx?: RepositoryTransaction): Promise<Currency> {
+    const client = this.client(tx);
+    const { count } = await client.currency.updateMany({
+      where: { uuid, deletedAt: null },
+      data: { status: PrismaCurrencyStatus.INACTIVE },
+    });
+    if (count === 0) {
+      throw new CurrencyNotFoundError(uuid);
+    }
+    const row = await client.currency.findFirst({ where: { uuid } });
+    return toCurrencyDomain(row as CurrencyModel);
+  }
+
+  // ExchangeRate is tenant-owned (06_DATABASE_STANDARDS.md MT-001) — every
+  // query below asserts `tenantId` explicitly and independently (MT-002).
+  // `fromCurrencyId`/`toCurrencyId` are real, in-module FKs
+  // (accounting.prisma) — accepted as plain bigints, no cross-repository
+  // validation that the referenced Currency exists (a future Business-layer
+  // concern, mirroring how `financialYearId`/`companyUuid` existence is
+  // never validated here either). Immutable historical time series
+  // (Ch.31.5/EXR-002) — no update/remove method.
+
+  async createExchangeRate(
+    tenantId: bigint,
+    props: CreateExchangeRateProps,
+    tx?: RepositoryTransaction,
+  ): Promise<ExchangeRate> {
+    const row = await this.client(tx).exchangeRate.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        fromCurrencyId: props.fromCurrencyId,
+        toCurrencyId: props.toCurrencyId,
+        // `DecimalValue.toString()` — Prisma's `Decimal` field accepts a
+        // plain decimal string as create input.
+        rate: props.rate.toString(),
+        effectiveDate: props.effectiveDate,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toExchangeRateDomain(row);
+  }
+
+  async findExchangeRateByUuid(tenantId: bigint, uuid: string): Promise<ExchangeRate | null> {
+    const row = await prisma.exchangeRate.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toExchangeRateDomain(row) : null;
+  }
+
+  async listExchangeRates(
+    tenantId: bigint,
+    fromCurrencyId?: bigint,
+    toCurrencyId?: bigint,
+  ): Promise<ExchangeRate[]> {
+    const rows = await prisma.exchangeRate.findMany({
+      where: { tenantId, fromCurrencyId, toCurrencyId, deletedAt: null },
+      orderBy: { effectiveDate: "desc" },
+    });
+    return rows.map(toExchangeRateDomain);
   }
 }

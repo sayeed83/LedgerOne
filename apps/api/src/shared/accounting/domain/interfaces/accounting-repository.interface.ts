@@ -18,8 +18,19 @@
 // `companies.uuid` — looked up/filtered by `uuid`, never a numeric id from
 // another module's schema, mirroring User Management's own `companyUuid`
 // reference into Organization.
+//
+// Currency is platform-owned reference data (MT-005, mirrors Authorization's
+// Permission) — its methods take no `tenantId`. Exchange Rate is
+// tenant-owned (MT-001) like FinancialYear/FiscalPeriod — every method takes
+// `tenantId` explicitly and re-asserts it in its own query (MT-002). Exchange
+// Rate is an immutable historical time series (Ch.31.5/EXR-002) — no
+// update/remove method is provided; a correction is a new, dated rate row (a
+// future Business-layer concern).
 import { FinancialYear, CreateFinancialYearProps, UpdateFinancialYearProps } from "../aggregates/financial-year.aggregate";
 import { FiscalPeriod, CreateFiscalPeriodProps, UpdateFiscalPeriodProps } from "../aggregates/fiscal-period.aggregate";
+import { Currency, CreateCurrencyProps, UpdateCurrencyProps } from "../aggregates/currency.aggregate";
+import { ExchangeRate, CreateExchangeRateProps } from "../entities/exchange-rate.entity";
+import { CurrencyStatus } from "../enums/currency-status.enum";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -75,4 +86,24 @@ export interface IAccountingRepository {
   closeFiscalPeriod(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<FiscalPeriod>;
   /** Sets status to Reopened (00_BUSINESS_RULES.md Ch.6.5/FP-003) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
   reopenFiscalPeriod(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<FiscalPeriod>;
+
+  createCurrency(props: CreateCurrencyProps, tx?: RepositoryTransaction): Promise<Currency>;
+  findCurrencyByUuid(uuid: string): Promise<Currency | null>;
+  findCurrencyByIsoCode(isoCode: string): Promise<Currency | null>;
+  /** Optionally narrowed to a single lifecycle status; omitted, returns every Currency. */
+  listCurrencies(status?: CurrencyStatus): Promise<Currency[]>;
+  updateCurrency(uuid: string, props: UpdateCurrencyProps, tx?: RepositoryTransaction): Promise<Currency>;
+  /** Sets status to Active (00_BUSINESS_RULES.md Ch.7.5/7.8) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
+  activateCurrency(uuid: string, tx?: RepositoryTransaction): Promise<Currency>;
+  /** Sets status to Inactive (00_BUSINESS_RULES.md Ch.7.5/7.8) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
+  deactivateCurrency(uuid: string, tx?: RepositoryTransaction): Promise<Currency>;
+
+  createExchangeRate(
+    tenantId: bigint,
+    props: CreateExchangeRateProps,
+    tx?: RepositoryTransaction,
+  ): Promise<ExchangeRate>;
+  findExchangeRateByUuid(tenantId: bigint, uuid: string): Promise<ExchangeRate | null>;
+  /** Optionally narrowed to a single currency pair; omitted, returns every Exchange Rate for the Tenant. Ordered by `effectiveDate` descending — resolving "most recently effective" (EXR-001, Ch.31.12) from this ordering is a Business-layer concern. */
+  listExchangeRates(tenantId: bigint, fromCurrencyId?: bigint, toCurrencyId?: bigint): Promise<ExchangeRate[]>;
 }

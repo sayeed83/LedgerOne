@@ -6,6 +6,10 @@ import { FinancialYear } from "../../domain/aggregates/financial-year.aggregate"
 import { FinancialYearStatus } from "../../domain/enums/financial-year-status.enum";
 import { FiscalPeriod } from "../../domain/aggregates/fiscal-period.aggregate";
 import { FiscalPeriodStatus } from "../../domain/enums/fiscal-period-status.enum";
+import { Currency } from "../../domain/aggregates/currency.aggregate";
+import { CurrencyStatus } from "../../domain/enums/currency-status.enum";
+import { ExchangeRate } from "../../domain/entities/exchange-rate.entity";
+import { DecimalValue } from "../../domain/value-objects/decimal-value.value-object";
 import { IAccountingRepository } from "../../domain/interfaces/accounting-repository.interface";
 
 export function buildFinancialYear(overrides: Partial<FinancialYear> = {}): FinancialYear {
@@ -45,6 +49,40 @@ export function buildFiscalPeriod(overrides: Partial<FiscalPeriod> = {}): Fiscal
   return Object.assign(Object.create(FiscalPeriod.prototype), base, overrides) as FiscalPeriod;
 }
 
+export function buildCurrency(overrides: Partial<Currency> = {}): Currency {
+  const base = new Currency(
+    1n,
+    "00000000-0000-0000-0000-000000000200",
+    "USD",
+    "US Dollar",
+    "$",
+    2,
+    CurrencyStatus.Active,
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+  );
+  return Object.assign(Object.create(Currency.prototype), base, overrides) as Currency;
+}
+
+export function buildExchangeRate(overrides: Partial<ExchangeRate> = {}): ExchangeRate {
+  const base = new ExchangeRate(
+    1n,
+    "00000000-0000-0000-0000-000000000300",
+    1n,
+    1n,
+    2n,
+    DecimalValue.create("83.0000000000"),
+    new Date("2026-03-15T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(ExchangeRate.prototype), base, overrides) as ExchangeRate;
+}
+
 export function createFakeAccountingRepository(): jest.Mocked<IAccountingRepository> {
   return {
     createFinancialYear: jest.fn(),
@@ -62,5 +100,15 @@ export function createFakeAccountingRepository(): jest.Mocked<IAccountingReposit
     softCloseFiscalPeriod: jest.fn(),
     closeFiscalPeriod: jest.fn(),
     reopenFiscalPeriod: jest.fn(),
+    createCurrency: jest.fn(),
+    findCurrencyByUuid: jest.fn(),
+    findCurrencyByIsoCode: jest.fn(),
+    listCurrencies: jest.fn(),
+    updateCurrency: jest.fn(),
+    activateCurrency: jest.fn(),
+    deactivateCurrency: jest.fn(),
+    createExchangeRate: jest.fn(),
+    findExchangeRateByUuid: jest.fn(),
+    listExchangeRates: jest.fn(),
   };
 }
