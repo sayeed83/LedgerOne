@@ -12,6 +12,11 @@ import {
   InvalidFinancialYearStatusTransitionError,
   FinancialYearOverlapError,
   FinancialYearNotOpenError,
+  FiscalPeriodNotFoundError,
+  InvalidFiscalPeriodStatusTransitionError,
+  FiscalPeriodOverlapError,
+  FiscalPeriodClosedError,
+  FiscalPeriodNotOpenError,
 } from "../../business/accounting-errors";
 
 export interface HttpErrorMapping {
@@ -31,6 +36,21 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof FinancialYearNotOpenError) {
     return { status: 403, code: "ACC_FINANCIAL_YEAR_NOT_OPEN" };
+  }
+  if (error instanceof FiscalPeriodNotFoundError) {
+    return { status: 404, code: "ACC_FISCAL_PERIOD_NOT_FOUND" };
+  }
+  if (error instanceof InvalidFiscalPeriodStatusTransitionError) {
+    return { status: 409, code: "ACC_INVALID_FISCAL_PERIOD_STATUS_TRANSITION" };
+  }
+  if (error instanceof FiscalPeriodOverlapError) {
+    return { status: 409, code: "ACC_FISCAL_PERIOD_OVERLAP" };
+  }
+  if (error instanceof FiscalPeriodClosedError) {
+    return { status: 409, code: "ACC_FISCAL_PERIOD_CLOSED" };
+  }
+  if (error instanceof FiscalPeriodNotOpenError) {
+    return { status: 403, code: "ACC_FISCAL_PERIOD_NOT_OPEN" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

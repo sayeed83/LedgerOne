@@ -1,19 +1,26 @@
 // Accounting module — Prisma schema.
 // Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
 // Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
-// Delete). Business rules: 00_BUSINESS_RULES.md Ch.5 (Financial Year).
+// Delete). Business rules: 00_BUSINESS_RULES.md Ch.5 (Financial Year), Ch.6
+// (Fiscal Period).
 //
 // Module ownership: this module owns Financial Year (the annual reporting-cycle
-// definition, Ch.5) — Database milestone only. Fiscal Period (Ch.6), Financial
-// Closing (Ch.32), Chart of Accounts (Ch.17), Currency (Ch.7), and Accounting
-// Periods generally are distinct entities/chapters and are explicitly not part
-// of this schema yet.
+// definition, Ch.5) and Fiscal Period (the monthly-typical subdivision of a
+// Financial Year, Ch.6) — Database milestone only for both. Financial Closing
+// (Ch.32), Chart of Accounts (Ch.17), Currency (Ch.7), and Journal Entries
+// (Ch.19-20) are distinct entities/chapters and are explicitly not part of
+// this schema yet.
 //
 // Cross-module references (FK-002): `companyUuid` is a plain indexed column
 // with no DB-level foreign key — the canonical Company row lives in
 // Organization's schema file (`organization.prisma`), and cross-module FKs are
 // forbidden regardless of convenience, mirroring User Management's own
 // `companyUuid` reference into Organization.
+//
+// In-module references (FK-001/FK-003/FK-004): FiscalPeriod.financialYearId is
+// a real, RESTRICT FK to FinancialYear.id — both models live in this same
+// module schema file, so the cross-module prohibition (FK-002) does not apply,
+// mirroring Organization's Branch/Department -> Company in-module FKs.
 
 /// The annual accounting/reporting cycle a Company prepares its statutory
 /// financial statements against (00_BUSINESS_RULES.md Ch.5.1). Tenant-owned
@@ -44,6 +51,8 @@ model FinancialYear {
   updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
   deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
 
+  fiscalPeriods FiscalPeriod[]
+
   @@unique([companyUuid, startDate, deletedAt], map: "uq_financial_years_company_start_date_deleted_at")
   @@index([tenantId, companyUuid, status], map: "idx_financial_years_tenant_company_status")
   @@index([companyUuid], map: "idx_financial_years_company_uuid")
@@ -59,4 +68,57 @@ enum FinancialYearStatus {
   REOPENED
 
   @@map("financial_year_status")
+}
+
+/// Subdivision of a Financial Year (00_BUSINESS_RULES.md Ch.6.1) — the
+/// granular unit at which transactions are posted and periods are
+/// individually closed. Tenant-owned (MT-001) and carries `companyUuid`
+/// directly (cross-module reference, FK-002, no DB-level FK) even though
+/// reachable via its parent FinancialYear, mirroring the same
+/// reachable-but-still-carried pattern Organization uses for Branch/Department
+/// carrying both `tenantId` and `companyId`. `financialYearId` is a real,
+/// in-module RESTRICT FK (FK-001/FK-003/FK-004) since both models live in this
+/// module. Database milestone only — no Repository/Business/Presentation
+/// layer, and period auto-generation/closing mechanics (Ch.6.6, Ch.32) are
+/// explicitly out of scope for this table.
+model FiscalPeriod {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  financialYearId BigInt        @db.UnsignedBigInt @map("financial_year_id")
+  financialYear   FinancialYear @relation(fields: [financialYearId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Fiscal Period start date (00_BUSINESS_RULES.md Ch.6.1) — inclusive.
+  startDate DateTime @db.DateTime(3) @map("start_date")
+  /// Fiscal Period end date (Ch.6.1) — inclusive; must not overlap any other Fiscal Period within the same Financial Year, enforced at the Business layer (a later milestone), not by a DB constraint.
+  endDate DateTime @db.DateTime(3) @map("end_date")
+
+  /// Fiscal Period lifecycle state (00_BUSINESS_RULES.md Ch.6.5): Open, SoftClosed, Closed, Reopened.
+  status FiscalPeriodStatus @default(OPEN) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([financialYearId, startDate, deletedAt], map: "uq_fiscal_periods_financial_year_start_date_deleted_at")
+  @@index([tenantId, companyUuid, status], map: "idx_fiscal_periods_tenant_company_status")
+  @@index([companyUuid], map: "idx_fiscal_periods_company_uuid")
+  @@index([financialYearId], map: "idx_fiscal_periods_financial_year_id")
+  @@map("fiscal_periods")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.6.5 Fiscal Period lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum FiscalPeriodStatus {
+  OPEN
+  SOFT_CLOSED
+  CLOSED
+  REOPENED
+
+  @@map("fiscal_period_status")
 }

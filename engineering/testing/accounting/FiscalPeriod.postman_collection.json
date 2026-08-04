@@ -1,0 +1,1407 @@
+{
+  "info": {
+    "_postman_id": "b2c3d4e5-7f8a-4b9c-8d1e-2f3a4b5c6d7e",
+    "name": "LedgerOne - Accounting (Fiscal Period)",
+    "description": "Accounting module (Fiscal Period) API collection (Create, Get, List, Update, SoftClose, Close, Reopen). Reflects the implementation exactly as shipped in apps/api/src/shared/accounting. Does not modify or duplicate FinancialYear.postman_collection.json — this collection creates its own Financial Year fixture as a setup step, since every Fiscal Period must belong to exactly one Financial Year (00_BUSINESS_RULES.md Ch.6.1).\n\nDesign note (JWT required): same convention as FinancialYear.postman_collection.json — every protected request carries `Authorization: Bearer {{accessToken}}`, a long-lived (10-year) RS256 token pre-signed with the repo's own already-committed dev-only JWT keypair (.env's JWT_PRIVATE_KEY) for tenantId 900001.\n\nDesign note (no X-Tenant-Id validation-failure case): identical reasoning to FinancialYear.postman_collection.json — current-tenant.middleware.ts derives `req.tenantId` from the verified JWT claim and overwrites `X-Tenant-Id` in place, so this collection's `X-Tenant-Id: {{tenantId}}` header is inert structural consistency, not a real validation path.\n\nDesign note (repeatable overlap testing, isolated from FinancialYear.postman_collection.json's own fixture data): a collection-level pre-request script computes {{fpYear}}/{{fpYearEnd}} once per Newman invocation from a distinct offset/modulus (base 3000, not FinancialYear's own base 2030) so two separate runs of *this* collection never collide with each other's leftover rows, and this collection's own Financial Year fixture never collides with FinancialYear.postman_collection.json's separately-seeded rows under the same companyUuid — both write into the same `financial_years` table, so a shared date-range formula would risk cross-collection overlap failures.\n\nDesign note (one parent Financial Year, two Fiscal Periods): unlike FinancialYear's own collection (which needs two Financial Years to isolate lifecycle-transition testing on the Financial Year entity itself), this collection creates ONE Financial Year and TWO Fiscal Periods within it — the primary Fiscal Period (April) and a second, independent Fiscal Period (June) used both as the non-overlapping fixture for overlap-rejection tests and as an isolated entity for invalid-transition testing, without disturbing the primary Fiscal Period's own lifecycle sequence.\n\n`validateFiscalPeriodOpen` is not exercised here — it is an internal Business-layer guard with no HTTP endpoint (mirrors `validateFinancialYearOpen`), not part of this module's public API surface. There is also no `open` endpoint — 00_BUSINESS_RULES.md Ch.6.5's lifecycle diagram documents no transition into Open other than initial creation (confirmed across the Repository/Business/Presentation milestones).\n\nKnown gap: List is unpaginated (07_REST_API_STANDARDS.md Ch.14 otherwise mandates cursor pagination) — same flagged Repository-layer limitation as Financial Year's/User Management's/Authorization's own list endpoints, not fixed by this collection.\n\nRun order for a full pass, top to bottom: 'Create Financial Year (Setup) - Success' must run first to seed {{financialYearUuid}}; every Fiscal Period request chains off {{fiscalPeriodUuid}}/{{secondFiscalPeriodUuid}} set by 'Create Fiscal Period - Success'/'Create Second Fiscal Period - Success'.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "900001",
+      "type": "string"
+    },
+    {
+      "key": "companyUuid",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    {
+      "key": "financialYearUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fiscalPeriodUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "secondFiscalPeriodUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fpYear",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fpYearEnd",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request) so every",
+          "// request in this run shares the same date fixture, while two",
+          "// separate runs land on different years and never collide — either",
+          "// with each other, or with FinancialYear.postman_collection.json's",
+          "// own leftover rows (distinct base/modulus from that collection's",
+          "// own formula, since both write into the same financial_years table",
+          "// under the same companyUuid).",
+          "if (!pm.collectionVariables.get(\"fpYear\")) {",
+          "    const year = 3000 + (Date.now() % 500);",
+          "    pm.collectionVariables.set(\"fpYear\", String(year));",
+          "    pm.collectionVariables.set(\"fpYearEnd\", String(year + 1));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Fiscal Period",
+      "item": [
+        {
+          "name": "Create Financial Year (Setup) - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "financial-years"]
+            },
+            "description": "Setup step, not the module under test: creates the parent Financial Year every Fiscal Period below belongs to (00_BUSINESS_RULES.md Ch.6.1). Uses a date range ({{fpYear}}-04-01 to {{fpYearEnd}}-03-31) computed from a base/modulus distinct from FinancialYear.postman_collection.json's own formula, so this fixture never overlaps that collection's leftover rows under the same {{companyUuid}}. Saves {{financialYearUuid}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{fpYear}}-04-01\",\n  \"endDate\": \"{{fpYearEnd}}-03-31\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"financialYearUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fiscal Period - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"]
+            },
+            "description": "No Authorization header at all — fails jwt-auth.middleware.ts before this module's own request validation ever runs.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"financialYearUuid\": \"{{financialYearUuid}}\",\n  \"startDate\": \"{{fpYear}}-04-01\",\n  \"endDate\": \"{{fpYear}}-04-30\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fiscal Period - Validation Error (Malformed Financial Year Uuid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"]
+            },
+            "description": "financialYearUuid fails the .uuid() schema rule — 400-family validation runs after jwt-auth/current-tenant succeed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"financialYearUuid\": \"not-a-uuid\",\n  \"startDate\": \"{{fpYear}}-04-01\",\n  \"endDate\": \"{{fpYear}}-04-30\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response has error envelope\", function () {",
+                  "    pm.expect(json).to.have.property(\"error\");",
+                  "});",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});",
+                  "",
+                  "pm.test(\"Error includes Zod issue details\", function () {",
+                  "    pm.expect(json.error.details).to.be.an(\"array\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fiscal Period - Validation Error (Missing Required Fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"]
+            },
+            "description": "Body omits startDate/endDate entirely — fails create-fiscal-period.dto.ts's required-field schema.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"financialYearUuid\": \"{{financialYearUuid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fiscal Period - Financial Year Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"]
+            },
+            "description": "A well-formed but non-existent financialYearUuid — rejected by create-fiscal-period.service.ts before any row is written.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"financialYearUuid\": \"00000000-0000-0000-0000-000000000000\",\n  \"startDate\": \"{{fpYear}}-04-01\",\n  \"endDate\": \"{{fpYear}}-04-30\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FINANCIAL_YEAR_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fiscal Period - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"]
+            },
+            "description": "Defines the primary Fiscal Period ({{fpYear}}-04-01 to {{fpYear}}-04-30) within {{financialYearUuid}} (00_BUSINESS_RULES.md Ch.6.1). Saves {{fiscalPeriodUuid}} for every subsequent request in this collection.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"financialYearUuid\": \"{{financialYearUuid}}\",\n  \"startDate\": \"{{fpYear}}-04-01\",\n  \"endDate\": \"{{fpYear}}-04-30\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response has data envelope\", function () {",
+                  "    pm.expect(json).to.have.property(\"data\");",
+                  "});",
+                  "",
+                  "pm.test(\"Fiscal Period has a uuid, correct companyUuid (inherited from Financial Year), and Open status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "    pm.expect(json.data.status).to.eql(\"OPEN\");",
+                  "});",
+                  "",
+                  "pm.test(\"Dates round-trip correctly\", function () {",
+                  "    pm.expect(new Date(json.data.startDate).getUTCMonth()).to.eql(3);",
+                  "    pm.expect(new Date(json.data.endDate).getUTCMonth()).to.eql(3);",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed (id, tenantId, financialYearId, createdBy, updatedBy, deletedAt)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.financialYearId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"fiscalPeriodUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Second Fiscal Period - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"]
+            },
+            "description": "Defines a second, non-overlapping Fiscal Period ({{fpYear}}-06-01 to {{fpYear}}-06-30) within the same {{financialYearUuid}}. Used later as the non-overlapping fixture for overlap-rejection tests, and as an independent entity to exercise invalid-transition paths without disturbing the primary Fiscal Period's own lifecycle sequence. Saves {{secondFiscalPeriodUuid}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"financialYearUuid\": \"{{financialYearUuid}}\",\n  \"startDate\": \"{{fpYear}}-06-01\",\n  \"endDate\": \"{{fpYear}}-06-30\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Second Fiscal Period has a uuid and Open status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.status).to.eql(\"OPEN\");",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"secondFiscalPeriodUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fiscal Period - Overlap (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"]
+            },
+            "description": "Attempts to define a third Fiscal Period whose range ({{fpYear}}-04-15 to {{fpYear}}-05-15) overlaps the primary Fiscal Period created above (00_BUSINESS_RULES.md Ch.6) — rejected by create-fiscal-period.service.ts before any row is written.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"financialYearUuid\": \"{{financialYearUuid}}\",\n  \"startDate\": \"{{fpYear}}-04-15\",\n  \"endDate\": \"{{fpYear}}-05-15\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_OVERLAP\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FISCAL_PERIOD_OVERLAP\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Fiscal Period - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "not-a-uuid"]
+            },
+            "description": "Path param fails the .uuid() schema rule."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Fiscal Period - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FISCAL_PERIOD_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Fiscal Period - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{fiscalPeriodUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{fiscalPeriodUuid}}"]
+            },
+            "description": "Reads back the primary Fiscal Period created above, scoped to {{tenantId}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the same Fiscal Period\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"fiscalPeriodUuid\"));",
+                  "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "    pm.expect(json.data.status).to.eql(\"OPEN\");",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed (id, tenantId, financialYearId, createdBy, updatedBy, deletedAt)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.financialYearId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Fiscal Periods - Success (Tenant-Wide)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"]
+            },
+            "description": "Lists every Fiscal Period within {{tenantId}} — unpaginated (07_REST_API_STANDARDS.md Ch.14 otherwise mandates cursor pagination), same flagged Repository-layer gap as Financial Year's/User Management's/Authorization's own list endpoints."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array containing both Fiscal Periods created above\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    const uuids = json.data.map(function (fp) { return fp.uuid; });",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"fiscalPeriodUuid\"));",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"secondFiscalPeriodUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Fiscal Periods - Filtered By Financial Year",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods?financialYearUuid={{financialYearUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"],
+              "query": [
+                {
+                  "key": "financialYearUuid",
+                  "value": "{{financialYearUuid}}"
+                }
+              ]
+            },
+            "description": "Narrows the tenant-wide list to {{financialYearUuid}} via the optional query filter, resolved internally to its financialYearId before filtering."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response includes both Fiscal Periods belonging to the filtered Financial Year\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\").that.is.not.empty;",
+                  "    const uuids = json.data.map(function (fp) { return fp.uuid; });",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"fiscalPeriodUuid\"));",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"secondFiscalPeriodUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Fiscal Periods - Validation Error (Malformed Financial Year Uuid Query Param)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods?financialYearUuid=not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods"],
+              "query": [
+                {
+                  "key": "financialYearUuid",
+                  "value": "not-a-uuid"
+                }
+              ]
+            },
+            "description": "?financialYearUuid= fails the .uuid() schema rule."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Fiscal Period - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "A well-formed but non-existent uuid.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endDate\": \"{{fpYear}}-04-29\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FISCAL_PERIOD_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Fiscal Period - Overlap (409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{fiscalPeriodUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{fiscalPeriodUuid}}"]
+            },
+            "description": "Attempts to extend the primary Fiscal Period's endDate into the second Fiscal Period's range (00_BUSINESS_RULES.md Ch.6) — rejected by update-fiscal-period.service.ts, which re-validates overlap (excluding itself) whenever either date changes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endDate\": \"{{fpYear}}-06-15\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_OVERLAP\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FISCAL_PERIOD_OVERLAP\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Fiscal Period - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{fiscalPeriodUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{fiscalPeriodUuid}}"]
+            },
+            "description": "Legitimately shrinks the primary Fiscal Period's endDate by one day, staying within its own original range — no overlap triggered.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endDate\": \"{{fpYear}}-04-29\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"endDate was revised\", function () {",
+                  "    pm.expect(new Date(json.data.endDate).getUTCDate()).to.eql(29);",
+                  "});",
+                  "",
+                  "pm.test(\"uuid and companyUuid are unchanged\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"fiscalPeriodUuid\"));",
+                  "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Soft Close Fiscal Period - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/00000000-0000-0000-0000-000000000000/soft-close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "00000000-0000-0000-0000-000000000000", "soft-close"]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FISCAL_PERIOD_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Soft Close Fiscal Period - Success (Open -> SoftClosed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{fiscalPeriodUuid}}/soft-close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{fiscalPeriodUuid}}", "soft-close"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.6.5: Open -> SoftClosed, enforced via the FiscalPeriod aggregate's softClose()."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Status is now SoftClosed\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"SOFT_CLOSED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Soft Close Fiscal Period - Invalid Transition (SoftClosed -> SoftClosed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{fiscalPeriodUuid}}/soft-close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{fiscalPeriodUuid}}", "soft-close"]
+            },
+            "description": "The primary Fiscal Period is already SoftClosed (from the request above) — softClose() only accepts Open as its starting state."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_INVALID_FISCAL_PERIOD_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_INVALID_FISCAL_PERIOD_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Fiscal Period - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/00000000-0000-0000-0000-000000000000/close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "00000000-0000-0000-0000-000000000000", "close"]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FISCAL_PERIOD_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Second Fiscal Period - Invalid Transition (Open -> Closed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{secondFiscalPeriodUuid}}/close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{secondFiscalPeriodUuid}}", "close"]
+            },
+            "description": "The second Fiscal Period is still Open (never soft-closed) — close() only accepts SoftClosed/Reopened as starting states."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_INVALID_FISCAL_PERIOD_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_INVALID_FISCAL_PERIOD_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Fiscal Period - Success (SoftClosed -> Closed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{fiscalPeriodUuid}}/close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{fiscalPeriodUuid}}", "close"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.6.5: SoftClosed -> Closed, enforced via the FiscalPeriod aggregate's close()."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Status is now Closed\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"CLOSED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Fiscal Period - Closed Period (409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{fiscalPeriodUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{fiscalPeriodUuid}}"]
+            },
+            "description": "The primary Fiscal Period is now Closed (from the request above) — update-fiscal-period.service.ts rejects any modification to a Closed period (00_BUSINESS_RULES.md Ch.6.8) before even checking for overlap.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endDate\": \"{{fpYear}}-04-28\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_CLOSED\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FISCAL_PERIOD_CLOSED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reopen Fiscal Period - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/00000000-0000-0000-0000-000000000000/reopen",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "00000000-0000-0000-0000-000000000000", "reopen"]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FISCAL_PERIOD_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reopen Second Fiscal Period - Invalid Transition (Open -> Reopened)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{secondFiscalPeriodUuid}}/reopen",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{secondFiscalPeriodUuid}}", "reopen"]
+            },
+            "description": "The second Fiscal Period is Open, not Closed — reopen() only accepts Closed as its starting state (00_BUSINESS_RULES.md FP-003)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_INVALID_FISCAL_PERIOD_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_INVALID_FISCAL_PERIOD_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reopen Fiscal Period - Success (Closed -> Reopened)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{fiscalPeriodUuid}}/reopen",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounting", "fiscal-periods", "{{fiscalPeriodUuid}}", "reopen"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.6.5/FP-003: Closed -> Reopened, a heavily audited exception, enforced via the FiscalPeriod aggregate's reopen()."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Status is now Reopened\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"REOPENED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

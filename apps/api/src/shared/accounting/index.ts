@@ -13,6 +13,13 @@ import { listFinancialYearsController } from "./presentation/controllers/v1/list
 import { openFinancialYearController } from "./presentation/controllers/v1/open-financial-year.controller";
 import { closeFinancialYearController } from "./presentation/controllers/v1/close-financial-year.controller";
 import { reopenFinancialYearController } from "./presentation/controllers/v1/reopen-financial-year.controller";
+import { createFiscalPeriodController } from "./presentation/controllers/v1/create-fiscal-period.controller";
+import { getFiscalPeriodController } from "./presentation/controllers/v1/get-fiscal-period.controller";
+import { updateFiscalPeriodController } from "./presentation/controllers/v1/update-fiscal-period.controller";
+import { listFiscalPeriodsController } from "./presentation/controllers/v1/list-fiscal-periods.controller";
+import { softCloseFiscalPeriodController } from "./presentation/controllers/v1/soft-close-fiscal-period.controller";
+import { closeFiscalPeriodController } from "./presentation/controllers/v1/close-fiscal-period.controller";
+import { reopenFiscalPeriodController } from "./presentation/controllers/v1/reopen-fiscal-period.controller";
 
 export function createAccountingRouter(deps: AccountingDependencies): Router {
   const router = Router();
@@ -29,6 +36,19 @@ export function createAccountingRouter(deps: AccountingDependencies): Router {
   router.post("/financial-years/:financialYearUuid/open", openFinancialYearController(deps));
   router.post("/financial-years/:financialYearUuid/close", closeFinancialYearController(deps));
   router.post("/financial-years/:financialYearUuid/reopen", reopenFinancialYearController(deps));
+
+  // --- Fiscal Period ---
+  // `validateFiscalPeriodOpen` is deliberately not exposed here, same reason
+  // as `validateFinancialYearOpen` above. There is no `open` endpoint either
+  // — Ch.6.5's lifecycle diagram documents no transition into Open other
+  // than initial creation (Business/Repository milestones' own finding).
+  router.post("/fiscal-periods", createFiscalPeriodController(deps));
+  router.get("/fiscal-periods", listFiscalPeriodsController(deps));
+  router.get("/fiscal-periods/:fiscalPeriodUuid", getFiscalPeriodController(deps));
+  router.put("/fiscal-periods/:fiscalPeriodUuid", updateFiscalPeriodController(deps));
+  router.post("/fiscal-periods/:fiscalPeriodUuid/soft-close", softCloseFiscalPeriodController(deps));
+  router.post("/fiscal-periods/:fiscalPeriodUuid/close", closeFiscalPeriodController(deps));
+  router.post("/fiscal-periods/:fiscalPeriodUuid/reopen", reopenFiscalPeriodController(deps));
 
   return router;
 }

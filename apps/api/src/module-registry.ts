@@ -8,7 +8,8 @@
 // manifests now exist and describe each module's public contract, but this
 // still registers each completed module's router directly, by name.
 // Authentication, Organization, User Management, Authorization, and
-// Accounting (Financial Year only) are the only modules implemented so far.
+// Accounting (Financial Year, Fiscal Period) are the only modules
+// implemented so far.
 //
 // jwt-auth + current-tenant are mounted ahead of every module except
 // Authentication itself: Authentication's own endpoints (login, refresh,

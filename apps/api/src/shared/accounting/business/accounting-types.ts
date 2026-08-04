@@ -5,3 +5,4 @@
 // schema that needs to validate against this enum's exact values (e.g.
 // `z.nativeEnum(...)`) imports it from here.
 export { FinancialYearStatus } from "../domain/enums/financial-year-status.enum";
+export { FiscalPeriodStatus } from "../domain/enums/fiscal-period-status.enum";

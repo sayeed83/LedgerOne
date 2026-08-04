@@ -19,6 +19,7 @@
 // another module's schema, mirroring User Management's own `companyUuid`
 // reference into Organization.
 import { FinancialYear, CreateFinancialYearProps, UpdateFinancialYearProps } from "../aggregates/financial-year.aggregate";
+import { FiscalPeriod, CreateFiscalPeriodProps, UpdateFiscalPeriodProps } from "../aggregates/fiscal-period.aggregate";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -51,4 +52,27 @@ export interface IAccountingRepository {
   closeFinancialYear(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<FinancialYear>;
   /** Sets status to Reopened (00_BUSINESS_RULES.md Ch.5.5/FY-004) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
   reopenFinancialYear(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<FinancialYear>;
+
+  createFiscalPeriod(
+    tenantId: bigint,
+    props: CreateFiscalPeriodProps,
+    tx?: RepositoryTransaction,
+  ): Promise<FiscalPeriod>;
+  findFiscalPeriodByUuid(tenantId: bigint, uuid: string): Promise<FiscalPeriod | null>;
+  /** Optionally narrowed to a single Financial Year; omitted, returns every Fiscal Period for the Tenant. */
+  listFiscalPeriods(tenantId: bigint, financialYearId?: bigint): Promise<FiscalPeriod[]>;
+  updateFiscalPeriod(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateFiscalPeriodProps,
+    tx?: RepositoryTransaction,
+  ): Promise<FiscalPeriod>;
+  /** Sets status to Open (00_BUSINESS_RULES.md Ch.6.5) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
+  openFiscalPeriod(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<FiscalPeriod>;
+  /** Sets status to SoftClosed (00_BUSINESS_RULES.md Ch.6.5) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
+  softCloseFiscalPeriod(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<FiscalPeriod>;
+  /** Sets status to Closed (00_BUSINESS_RULES.md Ch.6.5) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
+  closeFiscalPeriod(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<FiscalPeriod>;
+  /** Sets status to Reopened (00_BUSINESS_RULES.md Ch.6.5/FP-003) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
+  reopenFiscalPeriod(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<FiscalPeriod>;
 }
