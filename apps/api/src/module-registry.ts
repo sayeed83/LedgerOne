@@ -4,20 +4,21 @@
 // implementation of 03_ARCHITECTURE.md Ch.6.7's module registry concept.
 //
 // Full manifest-driven aggregation (reading each module's
-// `module.manifest.ts` to decide what to mount) isn't built yet — the four
+// `module.manifest.ts` to decide what to mount) isn't built yet — the
 // manifests now exist and describe each module's public contract, but this
 // still registers each completed module's router directly, by name.
-// Authentication, Organization, User Management, and Authorization are the
-// only modules implemented so far.
+// Authentication, Organization, User Management, Authorization, and
+// Accounting (Financial Year only) are the only modules implemented so far.
 //
 // jwt-auth + current-tenant are mounted ahead of every module except
 // Authentication itself: Authentication's own endpoints (login, refresh,
 // logout, forgot/reset-password, mfa/verify) are the token-issuing/
 // -exchanging endpoints — by definition reachable before a caller holds an
 // access token, so they cannot require one. Organization, User Management,
-// and Authorization all sit behind a verified identity now — the Foundation
-// Readiness Review's top-priority finding (09_SECURITY_GUIDELINES.md
-// MTS-001: "never trust a client-supplied tenant ID alone").
+// Authorization, and Accounting all sit behind a verified identity now — the
+// Foundation Readiness Review's top-priority finding
+// (09_SECURITY_GUIDELINES.md MTS-001: "never trust a client-supplied tenant
+// ID alone").
 //
 // Organization's mount omits `rewriteHeaderAs` — see
 // common/middleware/current-tenant.middleware.ts's header comment for why
@@ -28,6 +29,7 @@ import { createDefaultAuthenticationRouter, createAccessTokenVerifier } from "./
 import { createDefaultOrganizationRouter } from "./shared/organization";
 import { createDefaultUserManagementRouter } from "./shared/user-management";
 import { createDefaultAuthorizationRouter } from "./shared/authorization";
+import { createDefaultAccountingRouter } from "./shared/accounting";
 import { createJwtAuthMiddleware } from "./common/middleware/jwt-auth.middleware";
 import { createCurrentTenantMiddleware } from "./common/middleware/current-tenant.middleware";
 
@@ -53,5 +55,12 @@ export function registerModules(app: Express): void {
     jwtAuthMiddleware,
     createCurrentTenantMiddleware({ rewriteHeaderAs: "decimal" }),
     createDefaultAuthorizationRouter(),
+  );
+
+  app.use(
+    "/api/v1/accounting",
+    jwtAuthMiddleware,
+    createCurrentTenantMiddleware({ rewriteHeaderAs: "decimal" }),
+    createDefaultAccountingRouter(),
   );
 }

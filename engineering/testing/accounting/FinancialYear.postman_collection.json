@@ -1,0 +1,1538 @@
+{
+  "info": {
+    "_postman_id": "f4a1b2c3-6d7e-4f8a-9b0c-1d2e3f4a5b6c",
+    "name": "LedgerOne - Accounting (Financial Year)",
+    "description": "Accounting module (Financial Year only) API collection (Create, Get, List, Update, Open, Close, Reopen). Reflects the implementation exactly as shipped in apps/api/src/shared/accounting.\n\nDesign note (JWT required, unlike User Management's/Organization's original collections): those two collections were authored before jwt-auth.middleware.ts was mounted ahead of every protected module (Foundation Hardening) and are now stale \u2014 running them today 401s on every request. Accounting is built after that hardening, so this collection carries a valid `Authorization: Bearer {{accessToken}}` header on every protected request. {{accessToken}} is a long-lived (10-year) RS256 token pre-signed with the repo's own already-committed dev-only JWT keypair (.env's JWT_PRIVATE_KEY, itself documented as 'local-development-only... never reused in staging/production') for tenantId 900001 \u2014 not obtained via a live login, since no seeded Authentication credential is guaranteed to exist in a fresh dev database. This is a testing-artifact convenience, not a new production security posture.\n\nDesign note (no X-Tenant-Id validation-failure case): current-tenant.middleware.ts derives `req.tenantId` from the verified JWT claim and overwrites the `X-Tenant-Id` header in place (`rewriteHeaderAs: 'decimal'`) before this module's own Zod schema ever inspects it \u2014 so a client omitting the header no longer produces a 422 the way it did in User Management's original collection (authored before this middleware existed). This collection still sends `X-Tenant-Id: {{tenantId}}` for structural consistency with that collection's convention, but it is inert \u2014 the real tenant scope comes from {{accessToken}}'s own `tenantId` claim, which must match {{tenantId}} for these requests to exercise the fixture correctly.\n\nDesign note (repeatable overlap testing): a collection-level pre-request script computes {{fyStartYear}}/{{fyEndYear}}/{{fySecondStartYear}}/{{fySecondEndYear}} once per Newman invocation from the current timestamp, so two separate runs never collide with each other's leftover Financial Year rows under FY-002/Ch.5.8's overlap rule \u2014 the same problem {{$randomEmail}} solves for User Management's uniqueness rule, solved here with a moving date window instead (Financial Year has no email-like field to randomize).\n\n`validateFinancialYearOpen` is not exercised here \u2014 it is an internal Business-layer guard with no HTTP endpoint (mirrors User Management's own `validateUserActive`), not part of this module's public API surface.\n\nKnown gap: List is unpaginated (07_REST_API_STANDARDS.md Ch.14 otherwise mandates cursor pagination) \u2014 same flagged Repository-layer limitation as User Management's/Authorization's own list endpoints, not fixed by this collection.\n\nRun order for a full pass, top to bottom: every request chains off {{financialYearUuid}}/{{secondFinancialYearUuid}} set by 'Create Financial Year - Success'/'Create Second Financial Year - Success' \u2014 run in order; the primary Financial Year's lifecycle (Open -> Close -> Reopen) and the second Financial Year's own independent transitions (used only for invalid-transition/overlap setup) are interleaved by design, documented per-request.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "900001",
+      "type": "string"
+    },
+    {
+      "key": "companyUuid",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    {
+      "key": "financialYearUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "secondFinancialYearUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fyStartYear",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fyEndYear",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fySecondStartYear",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fySecondEndYear",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request) so every",
+          "// request in this run shares the same date fixture, while two",
+          "// separate runs land on different years and never collide under",
+          "// FY-002/Ch.5.8's overlap rule against a prior run's leftover rows.",
+          "if (!pm.collectionVariables.get(\"fyStartYear\")) {",
+          "    const year = 2030 + (Date.now() % 40);",
+          "    pm.collectionVariables.set(\"fyStartYear\", String(year));",
+          "    pm.collectionVariables.set(\"fyEndYear\", String(year + 1));",
+          "    pm.collectionVariables.set(\"fySecondStartYear\", String(year + 1));",
+          "    pm.collectionVariables.set(\"fySecondEndYear\", String(year + 2));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Financial Year",
+      "item": [
+        {
+          "name": "Create Financial Year - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "description": "No Authorization header at all \u2014 fails jwt-auth.middleware.ts before this module's own request validation ever runs. Confirms Accounting sits behind the same JWT gate as User Management/Authorization.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{fyStartYear}}-04-01\",\n  \"endDate\": \"{{fyEndYear}}-03-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Financial Year - Validation Error (Malformed Company Uuid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "description": "companyUuid fails the .uuid() schema rule \u2014 400-family validation runs after jwt-auth/current-tenant succeed, independent of tenant resolution.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"not-a-uuid\",\n  \"startDate\": \"{{fyStartYear}}-04-01\",\n  \"endDate\": \"{{fyEndYear}}-03-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response has error envelope\", function () {",
+                  "    pm.expect(json).to.have.property(\"error\");",
+                  "});",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});",
+                  "",
+                  "pm.test(\"Error includes Zod issue details\", function () {",
+                  "    pm.expect(json.error.details).to.be.an(\"array\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Financial Year - Validation Error (Missing Required Fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "description": "Body omits startDate/endDate entirely \u2014 fails create-financial-year.dto.ts's required-field schema.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Financial Year - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "description": "Defines the primary Financial Year under the fixed {{companyUuid}} test fixture for the {{fyStartYear}}-04-01 to {{fyEndYear}}-03-31 range (00_BUSINESS_RULES.md Ch.5.1). {{fyStartYear}}/{{fyEndYear}} are computed once per collection run in the collection-level pre-request script from the current timestamp, so two separate Newman invocations never collide on FY-002/Ch.5.8's overlap rule against leftover rows from a prior run \u2014 mirroring how User Management's own collection uses {{$randomEmail}} to sidestep its own uniqueness rule. Saves {{financialYearUuid}} for every subsequent request in this collection.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{fyStartYear}}-04-01\",\n  \"endDate\": \"{{fyEndYear}}-03-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response has data envelope\", function () {",
+                  "    pm.expect(json).to.have.property(\"data\");",
+                  "});",
+                  "",
+                  "pm.test(\"Financial Year has a uuid, correct companyUuid, and Future status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "    pm.expect(json.data.status).to.eql(\"FUTURE\");",
+                  "});",
+                  "",
+                  "pm.test(\"Dates round-trip correctly\", function () {",
+                  "    pm.expect(new Date(json.data.startDate).getUTCFullYear()).to.eql(Number(pm.collectionVariables.get(\"fyStartYear\")));",
+                  "    pm.expect(new Date(json.data.endDate).getUTCFullYear()).to.eql(Number(pm.collectionVariables.get(\"fyEndYear\")));",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"financialYearUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Second Financial Year - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "description": "Defines a second, contiguous Financial Year for the same {{companyUuid}} ({{fySecondStartYear}}-04-01 to {{fySecondEndYear}}-03-31, immediately following the first \u2014 no overlap with it). Used later in this collection as the non-overlapping fixture for the overlap-rejection test, and as an independent entity to exercise invalid-transition paths without disturbing the primary Financial Year's own lifecycle sequence. Saves {{secondFinancialYearUuid}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{fySecondStartYear}}-04-01\",\n  \"endDate\": \"{{fySecondEndYear}}-03-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Second Financial Year has a uuid and Future status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.status).to.eql(\"FUTURE\");",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"secondFinancialYearUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Financial Year - Overlap (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "description": "Attempts to define a third Financial Year whose range ({{fyStartYear}}-08-01 to {{fySecondStartYear}}-07-31) overlaps the primary Financial Year created above (00_BUSINESS_RULES.md Ch.5.7 FY-002, Ch.5.8) \u2014 rejected by create-financial-year.service.ts before any row is written.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{fyStartYear}}-08-01\",\n  \"endDate\": \"{{fySecondStartYear}}-07-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_OVERLAP\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FINANCIAL_YEAR_OVERLAP\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Financial Year - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "not-a-uuid"
+              ]
+            },
+            "description": "Path param fails the .uuid() schema rule."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Financial Year - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FINANCIAL_YEAR_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Financial Year - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{financialYearUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{financialYearUuid}}"
+              ]
+            },
+            "description": "Reads back the primary Financial Year created above, scoped to {{tenantId}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the same Financial Year\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"financialYearUuid\"));",
+                  "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "    pm.expect(json.data.status).to.eql(\"FUTURE\");",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Financial Years - Success (Tenant-Wide)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "description": "Lists every Financial Year within {{tenantId}} \u2014 unpaginated (07_REST_API_STANDARDS.md Ch.14 otherwise mandates cursor pagination), same flagged Repository-layer gap as User Management's/Authorization's own list endpoints."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array containing both Financial Years created above\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    const uuids = json.data.map(function (fy) { return fy.uuid; });",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"financialYearUuid\"));",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"secondFinancialYearUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Financial Years - Filtered By Company",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years?companyUuid={{companyUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{companyUuid}}"
+                }
+              ]
+            },
+            "description": "Narrows the tenant-wide list to {{companyUuid}} via the optional query filter."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Every returned Financial Year belongs to the filtered Company\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\").that.is.not.empty;",
+                  "    json.data.forEach(function (fy) {",
+                  "        pm.expect(fy.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Financial Years - Validation Error (Malformed Company Uuid Query Param)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years?companyUuid=not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "not-a-uuid"
+                }
+              ]
+            },
+            "description": "?companyUuid= fails the .uuid() schema rule."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Financial Year - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "A well-formed but non-existent uuid.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endDate\": \"{{fyEndYear}}-03-30\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FINANCIAL_YEAR_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Financial Year - Overlap (409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{financialYearUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{financialYearUuid}}"
+              ]
+            },
+            "description": "Attempts to extend the primary Financial Year's endDate into the second Financial Year's range (00_BUSINESS_RULES.md Ch.5.7 FY-002) \u2014 rejected by update-financial-year.service.ts, which re-validates overlap (excluding itself) whenever either date changes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endDate\": \"{{fySecondStartYear}}-06-30\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_OVERLAP\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FINANCIAL_YEAR_OVERLAP\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Financial Year - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{financialYearUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{financialYearUuid}}"
+              ]
+            },
+            "description": "Legitimately shrinks the primary Financial Year's endDate by one day, staying within its own original range \u2014 no overlap triggered.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endDate\": \"{{fyEndYear}}-03-30\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"endDate was revised\", function () {",
+                  "    pm.expect(new Date(json.data.endDate).getUTCDate()).to.eql(30);",
+                  "});",
+                  "",
+                  "pm.test(\"uuid and companyUuid are unchanged\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"financialYearUuid\"));",
+                  "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Financial Year - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/00000000-0000-0000-0000-000000000000/open",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "00000000-0000-0000-0000-000000000000",
+                "open"
+              ]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FINANCIAL_YEAR_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Financial Year - Success (Future -> Open)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{financialYearUuid}}/open",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{financialYearUuid}}",
+                "open"
+              ]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.5.5: Future -> Open, enforced via the FinancialYear aggregate's open()."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Status is now Open\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"OPEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Financial Year - Invalid Transition (Open -> Open)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{financialYearUuid}}/open",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{financialYearUuid}}",
+                "open"
+              ]
+            },
+            "description": "The primary Financial Year is already Open (from the request above) \u2014 open() only accepts Future as its starting state."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_INVALID_FINANCIAL_YEAR_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_INVALID_FINANCIAL_YEAR_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Second Financial Year - Invalid Transition (Future -> Closed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{secondFinancialYearUuid}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{secondFinancialYearUuid}}",
+                "close"
+              ]
+            },
+            "description": "The second Financial Year is still Future (never opened) \u2014 close() only accepts Open/Closing/Reopened as starting states."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_INVALID_FINANCIAL_YEAR_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_INVALID_FINANCIAL_YEAR_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Second Financial Year - Success (Future -> Open)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{secondFinancialYearUuid}}/open",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{secondFinancialYearUuid}}",
+                "open"
+              ]
+            },
+            "description": "Opens the second Financial Year so the next request can exercise reopen()'s own invalid-transition guard against an Open (not Closed) Financial Year."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Status is now Open\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"OPEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reopen Second Financial Year - Invalid Transition (Open -> Reopened)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{secondFinancialYearUuid}}/reopen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{secondFinancialYearUuid}}",
+                "reopen"
+              ]
+            },
+            "description": "The second Financial Year is Open, not Closed \u2014 reopen() only accepts Closed as its starting state (00_BUSINESS_RULES.md FY-004)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_INVALID_FINANCIAL_YEAR_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_INVALID_FINANCIAL_YEAR_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Financial Year - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/00000000-0000-0000-0000-000000000000/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "00000000-0000-0000-0000-000000000000",
+                "close"
+              ]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FINANCIAL_YEAR_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Financial Year - Success (Open -> Closed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{financialYearUuid}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{financialYearUuid}}",
+                "close"
+              ]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.5.5: Open -> Closed, enforced via the FinancialYear aggregate's close()."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Status is now Closed\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"CLOSED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reopen Financial Year - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/00000000-0000-0000-0000-000000000000/reopen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "00000000-0000-0000-0000-000000000000",
+                "reopen"
+              ]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ACC_FINANCIAL_YEAR_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reopen Financial Year - Success (Closed -> Reopened)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{financialYearUuid}}/reopen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{financialYearUuid}}",
+                "reopen"
+              ]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.5.5/FY-004: Closed -> Reopened, a heavily audited exception, enforced via the FinancialYear aggregate's reopen()."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Status is now Reopened\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"REOPENED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

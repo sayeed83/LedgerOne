@@ -1,0 +1,62 @@
+// Accounting module — Prisma schema.
+// Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
+// Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
+// Delete). Business rules: 00_BUSINESS_RULES.md Ch.5 (Financial Year).
+//
+// Module ownership: this module owns Financial Year (the annual reporting-cycle
+// definition, Ch.5) — Database milestone only. Fiscal Period (Ch.6), Financial
+// Closing (Ch.32), Chart of Accounts (Ch.17), Currency (Ch.7), and Accounting
+// Periods generally are distinct entities/chapters and are explicitly not part
+// of this schema yet.
+//
+// Cross-module references (FK-002): `companyUuid` is a plain indexed column
+// with no DB-level foreign key — the canonical Company row lives in
+// Organization's schema file (`organization.prisma`), and cross-module FKs are
+// forbidden regardless of convenience, mirroring User Management's own
+// `companyUuid` reference into Organization.
+
+/// The annual accounting/reporting cycle a Company prepares its statutory
+/// financial statements against (00_BUSINESS_RULES.md Ch.5.1). Tenant-owned
+/// (MT-001) even though reachable via Company, mirroring the established
+/// cross-module pattern (Organization's Branch/Department carrying `tenant_id`
+/// directly, User Management's `companyUuid` reference). Database milestone
+/// only — no Repository/Business/Presentation layer, and Fiscal Period (Ch.6)
+/// generation/closing mechanics are explicitly out of scope for this table.
+model FinancialYear {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Financial Year start date (00_BUSINESS_RULES.md Ch.5.1/5.7 FY-001) — inclusive.
+  startDate DateTime @db.DateTime(3) @map("start_date")
+  /// Financial Year end date (Ch.5.1) — inclusive; must not overlap any other Financial Year for the same Company (Ch.5.8), enforced at the Business layer (a later milestone), not by a DB constraint.
+  endDate DateTime @db.DateTime(3) @map("end_date")
+
+  /// Financial Year lifecycle state (00_BUSINESS_RULES.md Ch.5.5): Future, Open, Closing, Closed, Reopened.
+  status FinancialYearStatus @default(FUTURE) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([companyUuid, startDate, deletedAt], map: "uq_financial_years_company_start_date_deleted_at")
+  @@index([tenantId, companyUuid, status], map: "idx_financial_years_tenant_company_status")
+  @@index([companyUuid], map: "idx_financial_years_company_uuid")
+  @@map("financial_years")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.5.5 Financial Year lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum FinancialYearStatus {
+  FUTURE
+  OPEN
+  CLOSING
+  CLOSED
+  REOPENED
+
+  @@map("financial_year_status")
+}
