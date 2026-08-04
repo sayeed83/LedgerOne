@@ -1,0 +1,2216 @@
+{
+  "info": {
+    "_postman_id": "f2a4b6c8-9d0e-4f1a-8b2c-3d4e5f6a7b8c",
+    "name": "LedgerOne - Organization",
+    "description": "Organization module API collection (Tenant, Company, Branch, Department). Reflects the implementation exactly as shipped in apps/api/src/shared/organization — including known gaps (no TenantSettings/TenantSubscription create endpoint, so those rows never exist for a freshly created tenant; tenant context for Company/Branch/Department is resolved via the X-Tenant-Id header rather than auth-derived, since no tenant-resolution middleware exists yet). Pair with the LedgerOne - Local Dev environment in this same folder.\n\nRun order for a full happy-path pass, top to bottom: Tenant > Company > Branch > Department > Tenant Lifecycle (Deactivate). Each folder chains off collection variables set by its own 'Success' requests ({{tenantUuid}}, {{companyUuid}}, {{branchUuid}}, {{departmentUuid}}) — run folders in order, do not run negative-path requests out of order relative to their folder's Create/Get/Update sequence.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" },
+    { "key": "tenantLegalName", "value": "Acme Trading Pvt. Ltd.", "type": "string" },
+    { "key": "tenantContactEmail", "value": "admin@acme-test.example.com", "type": "string" },
+    { "key": "tenantLegalNameUpdated", "value": "Acme Trading Group Ltd.", "type": "string" },
+    { "key": "companyCode", "value": "CO-001", "type": "string" },
+    { "key": "companyLegalName", "value": "Acme Manufacturing Inc.", "type": "string" },
+    { "key": "companyTaxRegistrationNumber", "value": "TAX-0001", "type": "string" },
+    { "key": "companyBaseCurrencyCode", "value": "USD", "type": "string" },
+    { "key": "companyCountry", "value": "US", "type": "string" },
+    { "key": "companyTimeZone", "value": "America/New_York", "type": "string" },
+    { "key": "branchCode", "value": "BR-001", "type": "string" },
+    { "key": "branchName", "value": "Head Office", "type": "string" },
+    { "key": "departmentCode", "value": "DPT-001", "type": "string" },
+    { "key": "departmentName", "value": "Finance", "type": "string" },
+    { "key": "tenantUuid", "value": "", "type": "string" },
+    { "key": "companyUuid", "value": "", "type": "string" },
+    { "key": "branchUuid", "value": "", "type": "string" },
+    { "key": "departmentUuid", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Tenant",
+      "item": [
+        {
+          "name": "Create Tenant - Success",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legalName\": \"{{tenantLegalName}}\",\n  \"primaryContactEmail\": \"{{tenantContactEmail}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants"]
+            },
+            "description": "Provisions a new Tenant. Saves {{tenantUuid}} for every subsequent request in this collection."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response has data envelope\", function () {",
+                  "    pm.expect(json).to.have.property(\"data\");",
+                  "});",
+                  "",
+                  "pm.test(\"Tenant has a uuid and Provisioning status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.status).to.eql(\"PROVISIONING\");",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"tenantUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Tenant - Validation Error (Blank Legal Name)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legalName\": \"\",\n  \"primaryContactEmail\": \"{{tenantContactEmail}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants"]
+            },
+            "description": "Empty legalName fails the .min(1) schema rule."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});",
+                  "",
+                  "pm.test(\"Error includes Zod issue details\", function () {",
+                  "    pm.expect(json.error.details).to.be.an(\"array\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Tenant - Success",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}"]
+            },
+            "description": "Requires {{tenantUuid}} from 'Create Tenant - Success'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the created tenant\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"tenantUuid\"));",
+                  "    pm.expect(json.data.legalName).to.eql(pm.collectionVariables.get(\"tenantLegalName\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Tenant - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Well-formed uuid that was never issued."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_TENANT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_TENANT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Tenant - Validation Error (Malformed uuid)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "not-a-uuid"]
+            },
+            "description": "Fails the path param's .uuid() schema check before any repository lookup."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Tenant - Success",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legalName\": \"{{tenantLegalNameUpdated}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}"]
+            },
+            "description": "Revises identifying details only — status changes go through the dedicated activate/suspend/deactivate endpoints."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"legalName was updated\", function () {",
+                  "    pm.expect(json.data.legalName).to.eql(pm.collectionVariables.get(\"tenantLegalNameUpdated\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Tenant - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legalName\": \"Does Not Matter\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Well-formed uuid that was never issued."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_TENANT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_TENANT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Tenant Settings - Not Found (No Create Endpoint Exists)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/settings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "settings"]
+            },
+            "description": "KNOWN GAP: there is no endpoint to provision the initial TenantSettings row (update-tenant-settings.service.ts explicitly requires the row to already exist), so a freshly created tenant always 404s here. This is a documented gap, not a defect introduced by this test."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404 (documented gap: no settings-provisioning endpoint)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_TENANT_SETTINGS_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_TENANT_SETTINGS_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Tenant Settings - Not Found (No Create Endpoint Exists)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"defaultCurrencyCode\": \"INR\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/settings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "settings"]
+            },
+            "description": "Same documented gap as the GET above — the row must already exist, and nothing in this module ever creates it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404 (documented gap: no settings-provisioning endpoint)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_TENANT_SETTINGS_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_TENANT_SETTINGS_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Tenant Subscription - Not Found (No Create Endpoint Exists)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/subscription",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "subscription"]
+            },
+            "description": "KNOWN GAP: same as TenantSettings — no endpoint provisions the initial TenantSubscription row, so this always 404s for a freshly created tenant."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404 (documented gap: no subscription-provisioning endpoint)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_TENANT_SUBSCRIPTION_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_TENANT_SUBSCRIPTION_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Tenant Subscription - Not Found (No Create Endpoint Exists)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"STARTER\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/subscription",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "subscription"]
+            },
+            "description": "Same documented gap as the GET above."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404 (documented gap: no subscription-provisioning endpoint)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_TENANT_SUBSCRIPTION_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_TENANT_SUBSCRIPTION_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Activate Tenant - Success (Provisioning -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/activate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "activate"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.1.6: Provisioning -> Active."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Tenant status is now Active\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Activate Tenant - Invalid Transition (Active -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/activate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "activate"]
+            },
+            "description": "Run immediately after 'Activate Tenant - Success' so the tenant is already Active."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_INVALID_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_INVALID_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Suspend Tenant - Success (Active -> Suspended)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/suspend",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "suspend"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.1.6: Active -> Suspended."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Tenant status is now Suspended\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"SUSPENDED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Suspend Tenant - Invalid Transition (Suspended -> Suspended)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/suspend",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "suspend"]
+            },
+            "description": "Run immediately after 'Suspend Tenant - Success' so the tenant is already Suspended."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_INVALID_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_INVALID_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Activate Tenant - Reinstate (Suspended -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/activate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "activate"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.1.6: Suspended -> Active (reinstatement). Leaves the tenant Active for the Company/Branch/Department folders that follow — run this last within the Tenant folder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Tenant status is Active again\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "Tenant lifecycle and settings/subscription endpoints under /api/v1/organization/tenants. Deactivate is covered separately in the 'Tenant Lifecycle (Deactivate)' folder at the end of this collection, since it is terminal."
+    },
+    {
+      "name": "Company",
+      "item": [
+        {
+          "name": "Create Company - Validation Error (Missing X-Tenant-Id Header)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyCode\": \"{{companyCode}}\",\n  \"legalName\": \"{{companyLegalName}}\",\n  \"taxRegistrationNumber\": \"{{companyTaxRegistrationNumber}}\",\n  \"baseCurrencyCode\": \"{{companyBaseCurrencyCode}}\",\n  \"country\": \"{{companyCountry}}\",\n  \"timeZone\": \"{{companyTimeZone}}\",\n  \"financialYearStartMonth\": 4,\n  \"financialYearStartDay\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies"]
+            },
+            "description": "No tenant context can be resolved without X-Tenant-Id — fails header schema validation before the body is even considered."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Company - Validation Error (Blank Company Code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyCode\": \"\",\n  \"legalName\": \"{{companyLegalName}}\",\n  \"taxRegistrationNumber\": \"{{companyTaxRegistrationNumber}}\",\n  \"baseCurrencyCode\": \"{{companyBaseCurrencyCode}}\",\n  \"country\": \"{{companyCountry}}\",\n  \"timeZone\": \"{{companyTimeZone}}\",\n  \"financialYearStartMonth\": 4,\n  \"financialYearStartDay\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies"]
+            },
+            "description": "Header is valid; body fails the .min(1) schema rule on companyCode."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Company - Not Found (Tenant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "00000000-0000-0000-0000-000000000000" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyCode\": \"{{companyCode}}\",\n  \"legalName\": \"{{companyLegalName}}\",\n  \"taxRegistrationNumber\": \"{{companyTaxRegistrationNumber}}\",\n  \"baseCurrencyCode\": \"{{companyBaseCurrencyCode}}\",\n  \"country\": \"{{companyCountry}}\",\n  \"timeZone\": \"{{companyTimeZone}}\",\n  \"financialYearStartMonth\": 4,\n  \"financialYearStartDay\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies"]
+            },
+            "description": "Well-formed but never-issued tenant uuid in the header."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_TENANT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_TENANT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Company - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyCode\": \"{{companyCode}}\",\n  \"legalName\": \"{{companyLegalName}}\",\n  \"taxRegistrationNumber\": \"{{companyTaxRegistrationNumber}}\",\n  \"baseCurrencyCode\": \"{{companyBaseCurrencyCode}}\",\n  \"country\": \"{{companyCountry}}\",\n  \"timeZone\": \"{{companyTimeZone}}\",\n  \"financialYearStartMonth\": 4,\n  \"financialYearStartDay\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies"]
+            },
+            "description": "Requires {{tenantUuid}} from the Tenant folder. Saves {{companyUuid}} for the Branch/Department folders."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Company has a uuid and Draft status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.status).to.eql(\"DRAFT\");",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"companyUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Company - Duplicate Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyCode\": \"{{companyCode}}\",\n  \"legalName\": \"A Different Legal Name Ltd.\",\n  \"taxRegistrationNumber\": \"TAX-9999\",\n  \"baseCurrencyCode\": \"{{companyBaseCurrencyCode}}\",\n  \"country\": \"{{companyCountry}}\",\n  \"timeZone\": \"{{companyTimeZone}}\",\n  \"financialYearStartMonth\": 4,\n  \"financialYearStartDay\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies"]
+            },
+            "description": "Run immediately after 'Create Company - Success' — reuses {{companyCode}}, which is now taken within this tenant."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_DUPLICATE_COMPANY_CODE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_DUPLICATE_COMPANY_CODE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Company - Validation Error (Malformed companyUuid)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "not-a-uuid"]
+            },
+            "description": "Fails the path param's .uuid() schema check."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Company - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Valid tenant, never-issued company uuid. Also exercises tenant-scoping — the same 404 covers a company that genuinely belongs to a different tenant."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_COMPANY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_COMPANY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Company - Success",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}"]
+            },
+            "description": "Requires {{tenantUuid}} and {{companyUuid}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the created company\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "    pm.expect(json.data.companyCode).to.eql(pm.collectionVariables.get(\"companyCode\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Company - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legalName\": \"Does Not Matter\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Well-formed but never-issued company uuid."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_COMPANY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_COMPANY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Company - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legalName\": \"Acme Manufacturing Holdings Inc.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}"]
+            },
+            "description": "Revises identifying details only — status changes go through the dedicated activate/close endpoints."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"legalName was updated\", function () {",
+                  "    pm.expect(json.data.legalName).to.eql(\"Acme Manufacturing Holdings Inc.\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Activate Company - Success (Draft -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}/activate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}", "activate"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.2.6: Draft -> Active."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Company status is now Active\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Activate Company - Invalid Transition (Active -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}/activate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}", "activate"]
+            },
+            "description": "Run immediately after 'Activate Company - Success' so the company is already Active."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_INVALID_COMPANY_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_INVALID_COMPANY_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Close Company - Success (Active -> Closed)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}/close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}", "close"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.2.6: Active -> Closed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Company status is now Closed\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"CLOSED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Close Company - Invalid Transition (Closed -> Closed)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}/close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}", "close"]
+            },
+            "description": "Run immediately after 'Close Company - Success' so the company is already Closed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_INVALID_COMPANY_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_INVALID_COMPANY_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Activate Company - Reinstate (Closed -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}/activate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}", "activate"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.2.6: Closed -> Active (reopening). Leaves the company Active for the Branch/Department folders that follow — run this last within the Company folder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Company status is Active again\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List Companies By Tenant - Not Found (Tenant)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/00000000-0000-0000-0000-000000000000/companies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "00000000-0000-0000-0000-000000000000", "companies"]
+            },
+            "description": "Well-formed but never-issued tenant uuid in the path."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_TENANT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_TENANT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List Companies By Tenant - Success",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/companies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "companies"]
+            },
+            "description": "Unpaginated per 07_REST_API_STANDARDS.md Ch.14's narrow exception for a small, bounded list."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns an array containing the created company\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\").that.is.not.empty;",
+                  "    const uuids = json.data.map(function (c) { return c.uuid; });",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"companyUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "Company endpoints. Company/Branch/Department resolve tenant context via the X-Tenant-Id header (no auth-derived tenant middleware exists yet)."
+    },
+    {
+      "name": "Branch",
+      "item": [
+        {
+          "name": "Create Branch - Validation Error (Missing X-Tenant-Id Header)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"branchCode\": \"{{branchCode}}\",\n  \"branchName\": \"{{branchName}}\",\n  \"addressLine1\": \"123 Main Street\",\n  \"city\": \"New York\",\n  \"countryCode\": \"US\",\n  \"timeZone\": \"America/New_York\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches"]
+            },
+            "description": "No tenant context can be resolved without X-Tenant-Id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Branch - Validation Error (Blank Branch Code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"branchCode\": \"\",\n  \"branchName\": \"{{branchName}}\",\n  \"addressLine1\": \"123 Main Street\",\n  \"city\": \"New York\",\n  \"countryCode\": \"US\",\n  \"timeZone\": \"America/New_York\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches"]
+            },
+            "description": "Header is valid; body fails the .min(1) schema rule on branchCode."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Branch - Not Found (Company)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"00000000-0000-0000-0000-000000000000\",\n  \"branchCode\": \"{{branchCode}}\",\n  \"branchName\": \"{{branchName}}\",\n  \"addressLine1\": \"123 Main Street\",\n  \"city\": \"New York\",\n  \"countryCode\": \"US\",\n  \"timeZone\": \"America/New_York\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches"]
+            },
+            "description": "Valid tenant, well-formed but never-issued company uuid in the body."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_COMPANY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_COMPANY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Branch - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"branchCode\": \"{{branchCode}}\",\n  \"branchName\": \"{{branchName}}\",\n  \"addressLine1\": \"123 Main Street\",\n  \"city\": \"New York\",\n  \"countryCode\": \"US\",\n  \"timeZone\": \"America/New_York\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches"]
+            },
+            "description": "Requires {{tenantUuid}} and {{companyUuid}} from earlier folders. Saves {{branchUuid}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Branch has a uuid and Active status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.companyId).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"branchUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Branch - Duplicate Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"branchCode\": \"{{branchCode}}\",\n  \"branchName\": \"A Different Branch Name\",\n  \"addressLine1\": \"456 Other Street\",\n  \"city\": \"Boston\",\n  \"countryCode\": \"US\",\n  \"timeZone\": \"America/New_York\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches"]
+            },
+            "description": "Run immediately after 'Create Branch - Success' — reuses {{branchCode}}, now taken within this company."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_DUPLICATE_BRANCH_CODE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_DUPLICATE_BRANCH_CODE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Branch - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Valid tenant, never-issued branch uuid. Also exercises tenant-scoping."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_BRANCH_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_BRANCH_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Branch - Success",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches/{{branchUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches", "{{branchUuid}}"]
+            },
+            "description": "Requires {{tenantUuid}} and {{branchUuid}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the created branch\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"branchUuid\"));",
+                  "    pm.expect(json.data.branchCode).to.eql(pm.collectionVariables.get(\"branchCode\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Branch - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchName\": \"Does Not Matter\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Well-formed but never-issued branch uuid."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_BRANCH_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_BRANCH_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Branch - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchName\": \"Head Office (Renamed)\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/branches/{{branchUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "branches", "{{branchUuid}}"]
+            },
+            "description": "Status transitions are not part of this milestone — only identifying/address fields are revisable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"branchName was updated\", function () {",
+                  "    pm.expect(json.data.branchName).to.eql(\"Head Office (Renamed)\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List Branches By Company - Not Found (Company)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/00000000-0000-0000-0000-000000000000/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "00000000-0000-0000-0000-000000000000", "branches"]
+            },
+            "description": "Valid tenant, never-issued company uuid in the path."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_COMPANY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_COMPANY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List Branches By Company - Success",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}", "branches"]
+            },
+            "description": "Unpaginated per 07_REST_API_STANDARDS.md Ch.14's narrow exception for a small, bounded list."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns an array containing the created branch\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\").that.is.not.empty;",
+                  "    const uuids = json.data.map(function (b) { return b.uuid; });",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"branchUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "Branch endpoints. companyUuid identifies the parent Company in the create body (business data); X-Tenant-Id resolves tenant context."
+    },
+    {
+      "name": "Department",
+      "item": [
+        {
+          "name": "Create Department - Validation Error (Missing X-Tenant-Id Header)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"departmentCode\": \"{{departmentCode}}\",\n  \"departmentName\": \"{{departmentName}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments"]
+            },
+            "description": "No tenant context can be resolved without X-Tenant-Id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Department - Validation Error (Blank Department Code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"departmentCode\": \"\",\n  \"departmentName\": \"{{departmentName}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments"]
+            },
+            "description": "Header is valid; body fails the .min(1) schema rule on departmentCode."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Department - Not Found (Company)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"00000000-0000-0000-0000-000000000000\",\n  \"departmentCode\": \"{{departmentCode}}\",\n  \"departmentName\": \"{{departmentName}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments"]
+            },
+            "description": "Valid tenant, well-formed but never-issued company uuid in the body."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_COMPANY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_COMPANY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Department - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"departmentCode\": \"{{departmentCode}}\",\n  \"departmentName\": \"{{departmentName}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments"]
+            },
+            "description": "Requires {{tenantUuid}} and {{companyUuid}} from earlier folders. Saves {{departmentUuid}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Department has a uuid and Active status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.companyId).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"departmentUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Department - Duplicate Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"departmentCode\": \"{{departmentCode}}\",\n  \"departmentName\": \"A Different Department Name\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments"]
+            },
+            "description": "Run immediately after 'Create Department - Success' — reuses {{departmentCode}}, now taken within this company."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_DUPLICATE_DEPARTMENT_CODE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_DUPLICATE_DEPARTMENT_CODE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Department - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Valid tenant, never-issued department uuid. Also exercises tenant-scoping."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_DEPARTMENT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_DEPARTMENT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Department - Success",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments/{{departmentUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments", "{{departmentUuid}}"]
+            },
+            "description": "Requires {{tenantUuid}} and {{departmentUuid}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the created department\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"departmentUuid\"));",
+                  "    pm.expect(json.data.departmentCode).to.eql(pm.collectionVariables.get(\"departmentCode\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Department - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"departmentName\": \"Does Not Matter\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Well-formed but never-issued department uuid."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_DEPARTMENT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_DEPARTMENT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Department - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"departmentName\": \"Finance & Accounting\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/departments/{{departmentUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "departments", "{{departmentUuid}}"]
+            },
+            "description": "Status transitions are not part of this milestone — only identifying fields are revisable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"departmentName was updated\", function () {",
+                  "    pm.expect(json.data.departmentName).to.eql(\"Finance & Accounting\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List Departments By Company - Not Found (Company)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/00000000-0000-0000-0000-000000000000/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "00000000-0000-0000-0000-000000000000", "departments"]
+            },
+            "description": "Valid tenant, never-issued company uuid in the path."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_COMPANY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_COMPANY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List Departments By Company - Success",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-Id", "value": "{{tenantUuid}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/companies/{{companyUuid}}/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "companies", "{{companyUuid}}", "departments"]
+            },
+            "description": "Unpaginated per 07_REST_API_STANDARDS.md Ch.14's narrow exception for a small, bounded list."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns an array containing the created department\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\").that.is.not.empty;",
+                  "    const uuids = json.data.map(function (d) { return d.uuid; });",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"departmentUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "Department endpoints. companyUuid identifies the parent Company in the create body (business data); X-Tenant-Id resolves tenant context."
+    },
+    {
+      "name": "Tenant Lifecycle (Deactivate)",
+      "item": [
+        {
+          "name": "Deactivate Tenant - Success (Active -> Deactivated)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/deactivate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "deactivate"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.1.6: Active -> Deactivated (terminal). Run this LAST, after every other folder — deactivation is one-way and this collection does not exercise a Deactivated tenant against Company/Branch/Department endpoints (those services only check tenant existence, not status, so it would not actually block anything, but running it earlier would misrepresent the intended lifecycle order)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Tenant status is now Deactivated\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"DEACTIVATED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Deactivate Tenant - Invalid Transition (Deactivated -> Deactivated)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organization/tenants/{{tenantUuid}}/deactivate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organization", "tenants", "{{tenantUuid}}", "deactivate"]
+            },
+            "description": "Run immediately after 'Deactivate Tenant - Success' so the tenant is already Deactivated (a terminal state — no transition out of it is ever legal)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is ORG_INVALID_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"ORG_INVALID_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "POST /api/v1/organization/tenants/:tenantUuid/deactivate — terminal, run last in a full collection pass."
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection-wide: none required. Tenant/Company/Branch/Department uuids",
+          "// are chained purely through collection variables set by each folder's",
+          "// own 'Success' requests — no cookie/auth plumbing is needed for this module."
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ]
+}

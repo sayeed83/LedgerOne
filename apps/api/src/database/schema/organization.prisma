@@ -1,0 +1,311 @@
+// Organization module — Prisma schema.
+// Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
+// Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
+// Delete). Business rules: 00_BUSINESS_RULES.md Part 1 Ch.1 (Organization), Ch.2
+// (Company).
+//
+// Module ownership: this module owns Tenant (the technical/billing root —
+// `00_BUSINESS_RULES.md` Ch.1.3: Organization = Tenant, `03_ARCHITECTURE.md`
+// Decision 4.6.1), TenantSettings (organization-wide defaults, ORG-003),
+// TenantSubscription (module subscription + commercial state, ORG-004), and
+// Company (the legal entity dimension within a Tenant, Ch.2.3 — Company
+// Database milestone only; Business/Presentation/Repository layers, and
+// Branch/Department, Ch.3-4, are later milestones of this same module).
+//
+// Platform-owned note: Tenant is the tenant registry itself — every other
+// module's tenant-owned tables carry a `tenant_id` pointing at `tenants.id`
+// (FK-002 — no DB-level cross-module FK; other modules store the plain
+// column only). Within this module, TenantSettings/TenantSubscription/Company
+// are genuinely tenant-owned child records of Tenant and use a real, in-module FK.
+
+/// Tenant registry root. Organization (00_BUSINESS_RULES.md Ch.1) = Tenant
+/// (03_ARCHITECTURE.md Ch.4) — the single technical isolation unit every
+/// other module's `tenant_id` column references (no DB-level cross-module FK,
+/// FK-002). Never soft-deletable to the point of losing the tenant_id anchor:
+/// lifecycle is modeled via `status`, not `deleted_at` alone (ORG-005's
+/// cascade is an application-layer concern, not a DB cascade — FK-004).
+model Tenant {
+  id   BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid String @unique @db.Char(36) @map("uuid")
+
+  /// Organization's legal/registered name (00_BUSINESS_RULES.md Ch.1.9) — required, never blank.
+  legalName String @db.VarChar(255) @map("legal_name")
+
+  /// Primary contact email; must be verified before leaving Provisioning (00_BUSINESS_RULES.md Ch.1.9).
+  primaryContactEmail String @db.VarChar(255) @map("primary_contact_email")
+
+  /// Organization lifecycle state (00_BUSINESS_RULES.md Ch.1.6): Provisioning, Active, Suspended, Deactivated.
+  status TenantStatus @default(PROVISIONING) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  /// Nullable: the first Tenant row created for a self-service signup has no prior human actor.
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  settings     TenantSettings?
+  subscription TenantSubscription?
+  companies    Company[]
+  branches     Branch[]
+  departments  Department[]
+
+  @@index([status], map: "idx_tenants_status")
+  @@map("tenants")
+}
+
+/// Organization-wide default settings (00_BUSINESS_RULES.md ORG-003) that every
+/// new Company inherits unless it explicitly overrides them. One-to-one with
+/// Tenant, in-module FK (within this module, so a real FK per FK-001/FK-003/FK-004).
+model TenantSettings {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @unique @db.UnsignedBigInt @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Default Currency ISO 4217 code (00_BUSINESS_RULES.md Ch.7), inherited by new Companies (ORG-003).
+  defaultCurrencyCode String @db.VarChar(3) @map("default_currency_code")
+  /// Default IANA time zone (00_BUSINESS_RULES.md Ch.8), inherited by new Companies (ORG-003).
+  defaultTimeZone String @db.VarChar(64) @map("default_time_zone")
+  /// Default Financial Year pattern (00_BUSINESS_RULES.md Ch.5), inherited by new Companies (ORG-003).
+  defaultFinancialYearPattern String @db.VarChar(32) @map("default_financial_year_pattern")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@index([tenantId], map: "idx_tenant_settings_tenant_id")
+  @@map("tenant_settings")
+}
+
+/// Commercial subscription record (00_BUSINESS_RULES.md Ch.1.4/ORG-004) — which
+/// modules are active and the subscription's own commercial state. One-to-one
+/// with Tenant, in-module FK.
+model TenantSubscription {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @unique @db.UnsignedBigInt @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Commercial plan/tier identifier — not yet a modeled Plan entity (ORG's future billing self-service, deferred).
+  planCode String @db.VarChar(64) @map("plan_code")
+  /// Subscribed module keys (ORG-004: a Company cannot enable a module its Organization hasn't subscribed to).
+  subscribedModules Json @map("subscribed_modules")
+
+  /// Subscription commercial state (00_BUSINESS_RULES.md Ch.1.6), mirrors Tenant.status but tracked independently
+  /// since a subscription can lapse (payment failure) without every other Tenant attribute changing.
+  status TenantSubscriptionStatus @default(PROVISIONING) @map("status")
+
+  currentPeriodStartsAt DateTime  @db.DateTime(3) @map("current_period_starts_at")
+  currentPeriodEndsAt   DateTime  @db.DateTime(3) @map("current_period_ends_at")
+  cancelledAt           DateTime? @db.DateTime(3) @map("cancelled_at")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@index([tenantId], map: "idx_tenant_subscriptions_tenant_id")
+  @@index([status], map: "idx_tenant_subscriptions_status")
+  @@map("tenant_subscriptions")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.1.6 Organization lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum TenantStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+
+  @@map("tenant_status")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.1.6 subscription states (05_CODING_STANDARDS.md Ch.26.4).
+enum TenantSubscriptionStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+
+  @@map("tenant_subscription_status")
+}
+
+/// Distinct legal entity for statutory, accounting, and tax purposes, existing
+/// within exactly one Organization (00_BUSINESS_RULES.md Ch.2). Tenant-owned
+/// business data, never a separate Tenant (Ch.2.3) — carries the same
+/// `tenant_id` as its parent Organization; Company is the business-level
+/// dimension that distinguishes one legal entity's statutory books from
+/// another's within the Tenant, analogous to how Branch/Cost Center (Ch.3,
+/// Ch.28) also segment tenant-owned data without creating new isolation
+/// boundaries. Database milestone only — no Business/Presentation/Repository
+/// layer yet, and Branch/Department (Ch.3-4) are not part of this schema yet.
+model Company {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Short internal code used to identify/switch Companies within a Tenant (e.g. in UI company-switchers) — unique per Tenant, reusable after soft delete (06_DATABASE_STANDARDS.md SD-004).
+  companyCode String @db.VarChar(32) @map("company_code")
+
+  /// Legal/registered name (00_BUSINESS_RULES.md Ch.2.9) — required, unique within the Organization.
+  legalName String @db.VarChar(255) @map("legal_name")
+  /// Optional shorter name for UI/display; the presentation layer falls back to legalName when this is not set.
+  displayName String? @db.VarChar(255) @map("display_name")
+
+  /// Free-text legal form of the entity (e.g. Private Limited, LLC, Partnership). Not a fixed enum: 00_BUSINESS_RULES.md does not enumerate a closed list of legal entity types, and LedgerOne anticipates multi-jurisdiction expansion (00_BUSINESS_RULES.md Ch.66, 03_ARCHITECTURE.md Ch.1.16) where the valid set varies by jurisdiction.
+  legalEntityType String? @db.VarChar(64) @map("legal_entity_type")
+
+  /// Statutory registration number (00_BUSINESS_RULES.md Ch.2.9) — required, unique within the Organization. Jurisdiction-specific identifiers (GSTIN, PAN, VAT number, etc.) are represented generically here pending a documented, jurisdiction-specific tax-identifier business rule.
+  taxRegistrationNumber String @db.VarChar(64) @map("tax_registration_number")
+
+  /// ISO 4217 Base Currency code (00_BUSINESS_RULES.md CMP-002/CUR-001) — exactly one per Company; locked after the first posted transaction (enforced at the Business layer, a later milestone).
+  baseCurrencyCode String @db.VarChar(3) @map("base_currency_code")
+
+  /// ISO 3166-1 alpha-2 country of incorporation / statutory jurisdiction (00_BUSINESS_RULES.md Ch.2.7 "statutory jurisdiction entered").
+  country String @db.Char(2) @map("country")
+
+  /// IANA time zone — authoritative for posting date/time at the Company level (00_BUSINESS_RULES.md TZ-002).
+  timeZone String @db.VarChar(64) @map("time_zone")
+
+  /// Financial Year pattern (00_BUSINESS_RULES.md Ch.5 FY-001: "start month and day") — the recurring anchor every actual Financial Year (Ch.5, a later milestone) is generated from.
+  financialYearStartMonth Int @db.UnsignedTinyInt @map("financial_year_start_month")
+  financialYearStartDay   Int @db.UnsignedTinyInt @map("financial_year_start_day")
+
+  /// Company lifecycle state (00_BUSINESS_RULES.md Ch.2.6): Draft, Active, Closed, Dissolved.
+  status CompanyStatus @default(DRAFT) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  branches    Branch[]
+  departments Department[]
+
+  @@unique([tenantId, companyCode, deletedAt], map: "uq_companies_tenant_company_code")
+  @@unique([tenantId, legalName, deletedAt], map: "uq_companies_tenant_legal_name")
+  @@unique([tenantId, taxRegistrationNumber, deletedAt], map: "uq_companies_tenant_tax_registration_number")
+  @@index([tenantId, status], map: "idx_companies_tenant_status")
+  @@map("companies")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.2.6 Company lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum CompanyStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  DISSOLVED
+
+  @@map("company_status")
+}
+
+/// Physical or operational location within a Company (00_BUSINESS_RULES.md
+/// Ch.3) — a place business is conducted, never a separate legal/statutory
+/// entity (that remains Company, Ch.2). Tenant-owned business data: carries
+/// both `tenant_id` (MT-001 — no convenience exceptions, even though it is
+/// reachable via Company) and `company_id`, the finer business dimension a
+/// Branch actually belongs to (BRN-001). Database milestone only — no
+/// Business/Presentation/Repository layer yet, and Department (Ch.4) is not
+/// part of this schema yet.
+model Branch {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  companyId BigInt  @db.UnsignedBigInt @map("company_id")
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Short internal code identifying this Branch within its Company — unique per Company, reusable after soft delete (06_DATABASE_STANDARDS.md SD-004).
+  branchCode String @db.VarChar(32) @map("branch_code")
+
+  /// Branch name (00_BUSINESS_RULES.md Ch.3.8) — required, unique within its parent Company.
+  branchName String @db.VarChar(255) @map("branch_name")
+
+  /// Branch lifecycle state (00_BUSINESS_RULES.md Ch.3.5): Active, Inactive. The diagram's terminal "Archived after retention period" state is represented by `deleted_at` (soft delete), not a third status value.
+  status BranchStatus @default(ACTIVE) @map("status")
+
+  /// Structured address (00_BUSINESS_RULES.md Ch.9 — Business Locations: street, city, region, postal code, country), inlined on Branch pending the dedicated, cross-module Business Location entity Ch.9 anticipates; not a speculative build-ahead for this milestone.
+  addressLine1 String  @db.VarChar(255) @map("address_line1")
+  addressLine2 String? @db.VarChar(255) @map("address_line2")
+  city         String  @db.VarChar(120) @map("city")
+  region       String? @db.VarChar(120) @map("region")
+  postalCode   String? @db.VarChar(20) @map("postal_code")
+  /// ISO 3166-1 alpha-2 country — required for tax-jurisdiction determination (00_BUSINESS_RULES.md LOC-001).
+  countryCode  String  @db.Char(2) @map("country_code")
+
+  /// IANA time zone for this Branch's locale defaults (00_BUSINESS_RULES.md Ch.3.3).
+  timeZone String @db.VarChar(64) @map("time_zone")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([companyId, branchCode, deletedAt], map: "uq_branches_company_branch_code")
+  @@unique([companyId, branchName, deletedAt], map: "uq_branches_company_branch_name")
+  @@index([companyId], map: "idx_branches_company_id")
+  @@index([tenantId, companyId, status], map: "idx_branches_tenant_company_status")
+  @@map("branches")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.3.5 Branch lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("branch_status")
+}
+
+/// Functional/organizational grouping of Users within a Company (00_BUSINESS_RULES.md
+/// Ch.4) — used for approval routing and cost reporting, explicitly
+/// independent of physical location (Ch.4.1: not a child of Branch, Ch.3).
+/// Belongs directly to Company (DPT-001), a dimension parallel to Branch,
+/// not nested under it. Tenant-owned business data: carries `tenant_id`
+/// (MT-001 — no convenience exceptions, even though reachable via Company)
+/// and `company_id`, its actual parent (DPT-001). Database milestone only —
+/// no Business/Presentation/Repository layer yet.
+model Department {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  companyId BigInt  @db.UnsignedBigInt @map("company_id")
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Short internal code identifying this Department within its Company — unique per Company, reusable after soft delete (06_DATABASE_STANDARDS.md SD-004).
+  departmentCode String @db.VarChar(32) @map("department_code")
+
+  /// Department name (00_BUSINESS_RULES.md Ch.4.8) — required, unique within its parent Company.
+  departmentName String @db.VarChar(255) @map("department_name")
+
+  /// Department lifecycle state (00_BUSINESS_RULES.md Ch.4.5 — same Active/Inactive pattern as Branch, Ch.3.5).
+  status DepartmentStatus @default(ACTIVE) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([companyId, departmentCode, deletedAt], map: "uq_departments_company_department_code")
+  @@unique([companyId, departmentName, deletedAt], map: "uq_departments_company_department_name")
+  @@index([companyId], map: "idx_departments_company_id")
+  @@index([tenantId, companyId, status], map: "idx_departments_tenant_company_status")
+  @@map("departments")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.4.5 Department lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum DepartmentStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("department_status")
+}

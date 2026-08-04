@@ -74,3 +74,102 @@ describe("Authentication routes are mounted on the real app", () => {
     expect(res.body.error.code).toBe("AUTH_PASSWORD_POLICY_VIOLATION");
   });
 });
+
+describe("Organization routes are mounted on the real app", () => {
+  const nonexistentUuid = "00000000-0000-0000-0000-000000000000";
+
+  describe("Tenant", () => {
+    it("POST /api/v1/organization/tenants validates its body", async () => {
+      const res = await request(app).post("/api/v1/organization/tenants").send({ legalName: "" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("GET /api/v1/organization/tenants/:tenantUuid returns 404 for a nonexistent tenant", async () => {
+      const res = await request(app).get(`/api/v1/organization/tenants/${nonexistentUuid}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+  });
+
+  describe("Company", () => {
+    it("POST /api/v1/organization/companies requires the X-Tenant-Id header", async () => {
+      const res = await request(app).post("/api/v1/organization/companies").send({ companyCode: "CO-001" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("GET /api/v1/organization/companies/:companyUuid returns 404 for a nonexistent tenant", async () => {
+      const res = await request(app)
+        .get(`/api/v1/organization/companies/${nonexistentUuid}`)
+        .set("X-Tenant-Id", nonexistentUuid);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+
+    it("GET /api/v1/organization/tenants/:tenantUuid/companies returns 404 for a nonexistent tenant", async () => {
+      const res = await request(app).get(`/api/v1/organization/tenants/${nonexistentUuid}/companies`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+  });
+
+  describe("Branch", () => {
+    it("POST /api/v1/organization/branches requires the X-Tenant-Id header", async () => {
+      const res = await request(app).post("/api/v1/organization/branches").send({ branchCode: "BR-001" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("GET /api/v1/organization/branches/:branchUuid returns 404 for a nonexistent tenant", async () => {
+      const res = await request(app)
+        .get(`/api/v1/organization/branches/${nonexistentUuid}`)
+        .set("X-Tenant-Id", nonexistentUuid);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+
+    it("GET /api/v1/organization/companies/:companyUuid/branches returns 404 for a nonexistent tenant", async () => {
+      const res = await request(app)
+        .get(`/api/v1/organization/companies/${nonexistentUuid}/branches`)
+        .set("X-Tenant-Id", nonexistentUuid);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+  });
+
+  describe("Department", () => {
+    it("POST /api/v1/organization/departments requires the X-Tenant-Id header", async () => {
+      const res = await request(app).post("/api/v1/organization/departments").send({ departmentCode: "DPT-001" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("GET /api/v1/organization/departments/:departmentUuid returns 404 for a nonexistent tenant", async () => {
+      const res = await request(app)
+        .get(`/api/v1/organization/departments/${nonexistentUuid}`)
+        .set("X-Tenant-Id", nonexistentUuid);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+
+    it("GET /api/v1/organization/companies/:companyUuid/departments returns 404 for a nonexistent tenant", async () => {
+      const res = await request(app)
+        .get(`/api/v1/organization/companies/${nonexistentUuid}/departments`)
+        .set("X-Tenant-Id", nonexistentUuid);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+  });
+});
