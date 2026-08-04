@@ -7,8 +7,8 @@ export interface TextInputProps extends InputHTMLAttributes<HTMLInputElement> {
   icon?: ReactNode;
 }
 
-// components/ui: dumb/presentational (CMP-002) — props in, JSX out, no
-// data-fetching, no dependency on any business module.
+// dumb/presentational (CMP-002) — props in, JSX out, no data-fetching, no
+// dependency on any business module.
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   ({ label, error, hint, icon, id, className = "", ...inputProps }, ref) => {
     const generatedId = useId();
@@ -18,10 +18,7 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
 
     return (
       <div className="flex flex-col gap-1.5">
-        <label
-          htmlFor={inputId}
-          className="text-sm font-medium text-gray-700 dark:text-ink"
-        >
+        <label htmlFor={inputId} className="text-sm font-medium text-gray-700 dark:text-ink">
           {label}
         </label>
         <div className="relative">

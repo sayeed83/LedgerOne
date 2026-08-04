@@ -5,9 +5,8 @@ export interface OtpInputProps extends Omit<InputHTMLAttributes<HTMLInputElement
   error?: string;
 }
 
-// components/ui: dumb/presentational (CMP-002). A single 6-digit field,
-// matching the backend's `^\d{6}$` shape (mfa/verify.dto.ts) exactly —
-// no client-side reformatting/masking beyond restricting input to digits.
+// dumb/presentational (CMP-002). A single 6-digit field — no client-side
+// reformatting/masking beyond restricting input to digits.
 export const OtpInput = forwardRef<HTMLInputElement, OtpInputProps>(
   ({ label, error, id, className = "", ...inputProps }, ref) => {
     const generatedId = useId();

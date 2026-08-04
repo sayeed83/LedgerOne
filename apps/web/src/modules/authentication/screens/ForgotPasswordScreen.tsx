@@ -3,11 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { TextInput } from "@/components/ui/TextInput";
-import { LoadingButton } from "@/components/ui/LoadingButton";
-import { ErrorAlert } from "@/components/ui/ErrorAlert";
-import { SuccessAlert } from "@/components/ui/SuccessAlert";
-import { HashIcon, MailIcon } from "@/components/ui/icons";
+import { ErrorAlert, HashIcon, LoadingButton, MailIcon, SuccessAlert, TextInput } from "@ledgerone/ui";
 import { useForgotPassword } from "../hooks/use-forgot-password";
 import { getAuthErrorMessage } from "../utils/auth-error-messages";
 import {

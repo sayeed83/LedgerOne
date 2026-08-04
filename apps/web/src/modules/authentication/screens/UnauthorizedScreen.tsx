@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LockClosedBadgeIcon } from "@/components/ui/icons";
+import { LockClosedBadgeIcon } from "@ledgerone/ui";
 
 // FP1: this screen is UX only — every endpoint behind it independently
 // re-checks authorization server-side regardless of whether this page is

@@ -1,10 +1,10 @@
 import type { SVGProps } from "react";
 
 // Minimal, hand-authored line icons — no icon-library dependency added to
-// the frozen tech stack (02_TECH_STACK.md). Every icon is purely
-// decorative/supplementary (`aria-hidden`); it is never the sole carrier of
-// meaning (A11Y-003) — each usage site pairs it with text.
-type IconProps = SVGProps<SVGSVGElement>;
+// the frozen tech stack (02_TECH_STACK.md, 12_MODULE_DEVELOPMENT_GUIDE.md).
+// Every icon is purely decorative/supplementary (`aria-hidden` by default);
+// it must never be the sole carrier of meaning at a call site (A11Y-003).
+export type IconProps = SVGProps<SVGSVGElement>;
 
 function baseProps(props: IconProps): IconProps {
   return {
@@ -100,6 +100,16 @@ export function AlertTriangleIcon(props: IconProps) {
   );
 }
 
+export function InfoIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5.5" />
+      <path d="M12 7.8v.1" />
+    </svg>
+  );
+}
+
 export function ShieldCheckIcon(props: IconProps) {
   return (
     <svg {...baseProps(props)}>
@@ -124,6 +134,56 @@ export function LockClosedBadgeIcon(props: IconProps) {
       <rect x="4.5" y="11" width="15" height="9.5" rx="2" />
       <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
       <path d="M12 15v1.5" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="m5.5 8.5 6.5 7 6.5-7" />
+    </svg>
+  );
+}
+
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="m8.5 5.5 7 6.5-7 6.5" />
+    </svg>
+  );
+}
+
+export function XIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="M5 5l14 14M19 5 5 19" />
+    </svg>
+  );
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m20 20-4.3-4.3" />
+    </svg>
+  );
+}
+
+export function UserIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <circle cx="12" cy="8.5" r="3.5" />
+      <path d="M4.5 20c1.2-3.6 4-5.5 7.5-5.5s6.3 1.9 7.5 5.5" />
+    </svg>
+  );
+}
+
+export function MoreHorizontalIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)} strokeWidth={2.5}>
+      <path d="M5 12h.01M12 12h.01M19 12h.01" />
     </svg>
   );
 }

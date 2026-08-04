@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ClockIcon } from "@/components/ui/icons";
+import { ClockIcon } from "@ledgerone/ui";
 
 export function SessionExpiredScreen() {
   return (

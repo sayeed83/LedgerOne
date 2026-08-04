@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
-import { CheckIcon, LedgerOneMark } from "@/components/ui/icons";
-import { Card } from "@/components/ui/Card";
+import { Card, CheckIcon, LedgerOneMark } from "@ledgerone/ui";
 
 const PLATFORM_MODULES = ["Accounting", "Inventory", "Sales", "CRM", "Payroll", "Reporting"];
 

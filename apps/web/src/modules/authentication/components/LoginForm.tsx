@@ -5,11 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import type { AuthErrorFieldDetailDto } from "@ledgerone/shared-types";
-import { TextInput } from "@/components/ui/TextInput";
-import { PasswordInput } from "@/components/ui/PasswordInput";
-import { LoadingButton } from "@/components/ui/LoadingButton";
-import { ErrorAlert } from "@/components/ui/ErrorAlert";
-import { HashIcon, MailIcon } from "@/components/ui/icons";
+import { ErrorAlert, HashIcon, LoadingButton, MailIcon, PasswordInput, TextInput } from "@ledgerone/ui";
 import { loginFormSchema, type LoginFormValues } from "../schemas/login.schema";
 
 export interface LoginFormProps {

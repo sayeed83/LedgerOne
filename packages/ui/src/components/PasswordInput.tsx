@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useId, useState, type InputHTMLAttributes } from "react";
-import { EyeIcon, EyeOffIcon, LockIcon } from "./icons";
+import { EyeIcon, EyeOffIcon, LockIcon } from "../icons";
 
 export interface PasswordInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
   label: string;
@@ -9,9 +9,9 @@ export interface PasswordInputProps extends Omit<InputHTMLAttributes<HTMLInputEl
   hint?: string;
 }
 
-// components/ui: dumb/presentational (CMP-002). The show/hide toggle is
-// local UI state only — not server state, so it stays a plain useState
-// without violating the shared-component data-fetching prohibition.
+// dumb/presentational (CMP-002). The show/hide toggle is local UI state
+// only — not server state, so it stays a plain useState without violating
+// the shared-component data-fetching prohibition.
 export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
   ({ label, error, hint, id, className = "", ...inputProps }, ref) => {
     const generatedId = useId();

@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadingButton } from "@/components/ui/LoadingButton";
+import { LoadingButton } from "@ledgerone/ui";
 import { useLogout } from "@/modules/authentication/hooks/use-logout";
 
 // Placeholder authenticated landing page — the dashboard shell itself is

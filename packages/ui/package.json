@@ -2,10 +2,11 @@
   "name": "@ledgerone/ui",
   "version": "1.0.0",
   "private": true,
-  "description": "Shared design-system primitives used across frontend apps",
+  "description": "LedgerOne Design System — shared design tokens and component primitives used by every frontend module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "peerDependencies": {
-    "react": "*"
+    "react": "*",
+    "react-dom": "*"
   }
 }
