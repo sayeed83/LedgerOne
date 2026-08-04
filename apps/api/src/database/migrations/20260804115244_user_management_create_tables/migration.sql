@@ -1,0 +1,30 @@
+-- CreateTable
+CREATE TABLE `users` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `uuid` CHAR(36) NOT NULL,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `company_uuid` CHAR(36) NOT NULL,
+    `branch_uuid` CHAR(36) NULL,
+    `department_uuid` CHAR(36) NULL,
+    `first_name` VARCHAR(100) NOT NULL,
+    `middle_name` VARCHAR(100) NULL,
+    `last_name` VARCHAR(100) NOT NULL,
+    `display_name` VARCHAR(255) NULL,
+    `email` VARCHAR(255) NOT NULL,
+    `mobile_number` VARCHAR(20) NULL,
+    `status` ENUM('INVITED', 'ACTIVE', 'SUSPENDED', 'DEACTIVATED') NOT NULL DEFAULT 'INVITED',
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
+    `created_by` BIGINT UNSIGNED NULL,
+    `updated_by` BIGINT UNSIGNED NULL,
+    `deleted_at` DATETIME(3) NULL,
+
+    UNIQUE INDEX `users_uuid_key`(`uuid`),
+    INDEX `idx_users_tenant_id`(`tenant_id`),
+    INDEX `idx_users_tenant_status`(`tenant_id`, `status`),
+    INDEX `idx_users_company_uuid`(`company_uuid`),
+    INDEX `idx_users_branch_uuid`(`branch_uuid`),
+    INDEX `idx_users_department_uuid`(`department_uuid`),
+    UNIQUE INDEX `uq_users_tenant_email_deleted_at`(`tenant_id`, `email`, `deleted_at`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

@@ -173,3 +173,33 @@ describe("Organization routes are mounted on the real app", () => {
     });
   });
 });
+
+describe("User Management routes are mounted on the real app", () => {
+  const nonexistentTenantId = "999999";
+  const nonexistentUuid = "00000000-0000-0000-0000-000000000000";
+
+  it("POST /api/v1/users requires the X-Tenant-Id header", async () => {
+    const res = await request(app)
+      .post("/api/v1/users")
+      .send({ companyUuid: nonexistentUuid, firstName: "Test", lastName: "User", email: "test@example.com" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("GET /api/v1/users/:userUuid returns 404 for a nonexistent user", async () => {
+    const res = await request(app)
+      .get(`/api/v1/users/${nonexistentUuid}`)
+      .set("X-Tenant-Id", nonexistentTenantId);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("USR_USER_NOT_FOUND");
+  });
+
+  it("GET /api/v1/users returns 200 with an empty list for a tenant with no users", async () => {
+    const res = await request(app).get("/api/v1/users").set("X-Tenant-Id", nonexistentTenantId);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+});

@@ -1,0 +1,81 @@
+// User Management module — Prisma schema.
+// Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
+// Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
+// Delete). Business rules: 00_BUSINESS_RULES.md Ch.10 (Users).
+//
+// Module ownership (Ch.10.3/10.4): this module owns the canonical User
+// record — personal identity (name, contact), business-level status
+// (Ch.10.5's lifecycle), and organizational assignment (Company/Branch/
+// Department scoping). Explicitly NOT owned here:
+//   - Credentials, sessions, login, passwords, MFA — Authentication module
+//     (Ch.10.4: "authentication mechanics... are purely technical"),
+//     referenced back via Authentication's `user_credentials.user_uuid`.
+//   - Employment details (hire date, designation, compensation) — a
+//     separate Employee entity, Payroll module (00_BUSINESS_RULES.md Ch.75),
+//     a distinct Bounded Context from User (EMP-004 forbids merging the two).
+//   - Role/Permission assignment — Authorization module (Ch.11-12).
+//   - Tenant/Company/Branch/Department themselves — Organization module.
+//
+// Cross-module references (FK-002): `tenantId`, `companyUuid`, `branchUuid`,
+// and `departmentUuid` are plain indexed columns with no DB-level foreign
+// key — the tenant registry and Company/Branch/Department tables live in
+// Organization's schema file, and cross-module FKs are forbidden regardless
+// of convenience. `tenantId` is the one exception stored as the target's
+// numeric `id` rather than `uuid` (MT-001's tenant-isolation-column
+// standard); `companyUuid`/`branchUuid`/`departmentUuid` follow the general
+// FK-002 uuid-reference pattern, consistent with Authentication's
+// `user_credentials.user_uuid`.
+
+/// Canonical human identity (00_BUSINESS_RULES.md Ch.10.1). Tenant-owned
+/// (MT-001). One-to-one with Authentication's `user_credentials` row via
+/// `uuid` (cross-module, FK-002 — no DB FK, never joined directly).
+model User {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK. Every User belongs to exactly one Company (USR-001).
+  companyUuid String @db.Char(36) @map("company_uuid")
+  /// Cross-module reference to Organization's `branches.uuid` (FK-002) — no DB-level FK. Nullable: Branch scoping is optional (Ch.10.10).
+  branchUuid String? @db.Char(36) @map("branch_uuid")
+  /// Cross-module reference to Organization's `departments.uuid` (FK-002) — no DB-level FK. Nullable: Department scoping is optional (Ch.10.10).
+  departmentUuid String? @db.Char(36) @map("department_uuid")
+
+  firstName  String  @db.VarChar(100) @map("first_name")
+  middleName String? @db.VarChar(100) @map("middle_name")
+  lastName   String  @db.VarChar(100) @map("last_name")
+  /// Optional shorter name for UI/display; the presentation layer falls back to firstName + lastName when this is not set.
+  displayName String? @db.VarChar(255) @map("display_name")
+
+  /// Required, unique within the Organization (Ch.10.8), verified before first login.
+  email        String  @db.VarChar(255) @map("email")
+  mobileNumber String? @db.VarChar(20) @map("mobile_number")
+
+  /// User lifecycle state (00_BUSINESS_RULES.md Ch.10.5): Invited, Active, Suspended, Deactivated.
+  status UserStatus @default(INVITED) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  /// Nullable: the first User row created for a self-service signup has no prior human actor.
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([tenantId, email, deletedAt], map: "uq_users_tenant_email_deleted_at")
+  @@index([tenantId], map: "idx_users_tenant_id")
+  @@index([tenantId, status], map: "idx_users_tenant_status")
+  @@index([companyUuid], map: "idx_users_company_uuid")
+  @@index([branchUuid], map: "idx_users_branch_uuid")
+  @@index([departmentUuid], map: "idx_users_department_uuid")
+  @@map("users")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.10.5 User lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+
+  @@map("user_status")
+}

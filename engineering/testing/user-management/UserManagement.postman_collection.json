@@ -1,0 +1,1422 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "name": "LedgerOne - User Management",
+    "description": "User Management module API collection (Create, Invite, Get, Update, Activate, Suspend, Deactivate, List, Search). Reflects the implementation exactly as shipped in apps/api/src/shared/user-management.\n\nDesign note (self-contained, no Organization dependency): `users.tenant_id`/`users.company_uuid` carry no DB-level foreign key to `tenants`/`companies` (06_DATABASE_STANDARDS.md FK-002) and the Business layer never validates them against Organization's real data (documented in create-user.service.ts) \u2014 so this collection uses a fixed test {{tenantId}} and {{companyUuid}} rather than chaining a real Tenant/Company through the Organization collection. This sidesteps a genuine architectural gap: User Management's `X-Tenant-Id` header carries the tenant's *numeric* internal id (tenant-id-header.schema.ts), which no HTTP endpoint anywhere in this system ever exposes (06_DATABASE_STANDARDS.md PK-003) \u2014 there is no way to obtain it from a freshly-created Tenant's uuid without direct database access. Mirrors Authentication's own collection, which hardcodes {{tenantId}}=1 in its environment for the identical reason.\n\nUses Postman's {{$randomEmail}} dynamic variable on both create-style requests so the collection can be run repeatedly against the same database without ever colliding on Ch.10.8's per-tenant email-uniqueness rule \u2014 no manual edits required between runs.\n\nKnown gap: List/Search are unpaginated (07_REST_API_STANDARDS.md Ch.14 otherwise mandates cursor pagination) \u2014 flagged in list-users.controller.ts/search-users.controller.ts as a Repository-layer limitation, not fixed by this collection.\n\nRun order for a full pass, top to bottom: every request chains off collection variables set by 'Create User - Success' and 'Invite User - Success' ({{userUuid}}/{{userEmail}}, {{secondUserUuid}}/{{secondUserEmail}}) \u2014 run in order, do not run negative-path requests out of order relative to the lifecycle sequence (Activate -> Suspend -> Activate (reinstate) -> Deactivate).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "900001",
+      "type": "string"
+    },
+    {
+      "key": "companyUuid",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "type": "string"
+    },
+    {
+      "key": "firstName",
+      "value": "Priya",
+      "type": "string"
+    },
+    {
+      "key": "lastName",
+      "value": "Sharma",
+      "type": "string"
+    },
+    {
+      "key": "secondFirstName",
+      "value": "Arjun",
+      "type": "string"
+    },
+    {
+      "key": "secondLastName",
+      "value": "Mehta",
+      "type": "string"
+    },
+    {
+      "key": "updatedDisplayName",
+      "value": "Priya S.",
+      "type": "string"
+    },
+    {
+      "key": "userUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "secondUserUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "secondUserEmail",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "User",
+      "item": [
+        {
+          "name": "Create User - Validation Error (Missing X-Tenant-Id Header)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            },
+            "description": "No tenant context can be resolved without X-Tenant-Id \u2014 fails header schema validation before the body is even considered.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"firstName\": \"{{firstName}}\",\n  \"lastName\": \"{{lastName}}\",\n  \"email\": \"someone@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response has error envelope\", function () {",
+                  "    pm.expect(json).to.have.property(\"error\");",
+                  "});",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create User - Validation Error (Blank First Name)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            },
+            "description": "Header is valid; body fails the .min(1) schema rule on firstName.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"firstName\": \"\",\n  \"lastName\": \"{{lastName}}\",\n  \"email\": \"someone@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});",
+                  "",
+                  "pm.test(\"Error includes Zod issue details\", function () {",
+                  "    pm.expect(json.error.details).to.be.an(\"array\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create User - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            },
+            "description": "Registers a new User under the fixed {{tenantId}}/{{companyUuid}} test fixture (see collection description \u2014 no cross-module Organization dependency needed, since `users` carries no DB-level FK to `tenants`/`companies`, FK-002). Uses Postman's {{$randomEmail}} dynamic variable so repeated collection runs never collide on Ch.10.8's per-tenant email-uniqueness rule. Saves {{userUuid}} and {{userEmail}} for every subsequent request in this collection.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"firstName\": \"{{firstName}}\",\n  \"lastName\": \"{{lastName}}\",\n  \"email\": \"{{$randomEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response has data envelope\", function () {",
+                  "    pm.expect(json).to.have.property(\"data\");",
+                  "});",
+                  "",
+                  "pm.test(\"User has a uuid and Invited status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.status).to.eql(\"INVITED\");",
+                  "});",
+                  "",
+                  "pm.test(\"Internal fields are never exposed\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"userUuid\", json.data.uuid);",
+                  "pm.collectionVariables.set(\"userEmail\", json.data.email);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create User - Duplicate Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            },
+            "description": "Run immediately after 'Create User - Success' \u2014 reuses {{userEmail}}, which is now taken within this tenant (00_BUSINESS_RULES.md Ch.10.8).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"firstName\": \"Someone\",\n  \"lastName\": \"Else\",\n  \"email\": \"{{userEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_DUPLICATE_EMAIL\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_DUPLICATE_EMAIL\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invite User - Validation Error (Malformed Company Uuid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/invite",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "invite"
+              ]
+            },
+            "description": "Fails the body's companyUuid .uuid() schema check.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"not-a-uuid\",\n  \"firstName\": \"{{secondFirstName}}\",\n  \"lastName\": \"{{secondLastName}}\",\n  \"email\": \"someone-else@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invite User - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/invite",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "invite"
+              ]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.10.6's named onboarding workflow \u2014 same persistence as Create User, exposed under the business-vocabulary path. Saves {{secondUserUuid}}/{{secondUserEmail}} for the Update/List/Search requests below.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"firstName\": \"{{secondFirstName}}\",\n  \"lastName\": \"{{secondLastName}}\",\n  \"email\": \"{{$randomEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Invited user has Invited status\", function () {",
+                  "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+                  "    pm.expect(json.data.status).to.eql(\"INVITED\");",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"secondUserUuid\", json.data.uuid);",
+                  "pm.collectionVariables.set(\"secondUserEmail\", json.data.email);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invite User - Duplicate Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/invite",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "invite"
+              ]
+            },
+            "description": "Run immediately after 'Invite User - Success' \u2014 reuses {{secondUserEmail}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"firstName\": \"Another\",\n  \"lastName\": \"Person\",\n  \"email\": \"{{secondUserEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_DUPLICATE_EMAIL\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_DUPLICATE_EMAIL\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get User - Validation Error (Malformed uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "not-a-uuid"
+              ]
+            },
+            "description": "Fails the path param's .uuid() schema check before any repository lookup."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get User - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "Well-formed uuid that was never issued."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_USER_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_USER_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get User - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}"
+              ]
+            },
+            "description": "Requires {{userUuid}} from 'Create User - Success'."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the created user\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"userUuid\"));",
+                  "    pm.expect(json.data.email).to.eql(pm.collectionVariables.get(\"userEmail\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update User - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "Well-formed but never-issued user uuid.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Does Not Matter\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_USER_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_USER_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update User - Duplicate Email",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}"
+              ]
+            },
+            "description": "Attempts to change {{userUuid}}'s email to {{secondUserEmail}}, already registered to the second user within this tenant.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{secondUserEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_DUPLICATE_EMAIL\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_DUPLICATE_EMAIL\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update User - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}"
+              ]
+            },
+            "description": "Revises identifying/contact details only \u2014 status changes go through the dedicated activate/suspend/deactivate endpoints.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"{{updatedDisplayName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"displayName was updated\", function () {",
+                  "    pm.expect(json.data.displayName).to.eql(pm.collectionVariables.get(\"updatedDisplayName\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate User - Success (Invited -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}",
+                "activate"
+              ]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.10.5: Invited -> Active."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"User status is now Active\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate User - Invalid Transition (Active -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}",
+                "activate"
+              ]
+            },
+            "description": "Run immediately after 'Activate User - Success' so the user is already Active."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_INVALID_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_INVALID_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Suspend User - Invalid Transition (Invited -> Suspended)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{secondUserUuid}}/suspend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{secondUserUuid}}",
+                "suspend"
+              ]
+            },
+            "description": "The second (Invited) user has never been activated \u2014 Ch.10.5 only allows Active -> Suspended."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_INVALID_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_INVALID_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Suspend User - Success (Active -> Suspended)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}/suspend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}",
+                "suspend"
+              ]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.10.5: Active -> Suspended (e.g. leave of absence)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"User status is now Suspended\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"SUSPENDED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate User - Reinstate (Suspended -> Active)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}",
+                "activate"
+              ]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.10.5: Suspended -> Active (reinstatement). Leaves the user Active for the List/Search requests that follow \u2014 run this last within the lifecycle sequence, before Deactivate."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"User status is Active again\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Users - Validation Error (Missing X-Tenant-Id Header)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            },
+            "description": "No tenant context can be resolved without X-Tenant-Id."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Users - Success (Tenant-Wide)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            },
+            "description": "Unpaginated (a documented, flagged gap \u2014 see collection description) \u2014 returns every User in {{tenantId}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns an array containing both created users\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\").that.is.not.empty;",
+                  "    const uuids = json.data.map(function (u) { return u.uuid; });",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"userUuid\"));",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"secondUserUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Users - Filtered By Company",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users?companyUuid={{companyUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{companyUuid}}"
+                }
+              ]
+            },
+            "description": "?companyUuid= narrows the tenant-wide list to one Company. Query string built from {{companyUuid}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Every returned user belongs to the filtered company\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\").that.is.not.empty;",
+                  "    json.data.forEach(function (u) {",
+                  "        pm.expect(u.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search Users - Validation Error (Missing Query Param)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "search"
+              ]
+            },
+            "description": "Fails the query schema's .min(1) rule on `query` (absent entirely)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search Users - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/search?query={{secondLastName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{secondLastName}}"
+                }
+              ]
+            },
+            "description": "Free-text substring match against name/email. Query string built from {{secondLastName}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the matching second user\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\").that.is.not.empty;",
+                  "    const uuids = json.data.map(function (u) { return u.uuid; });",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"secondUserUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate User - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/00000000-0000-0000-0000-000000000000/deactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "00000000-0000-0000-0000-000000000000",
+                "deactivate"
+              ]
+            },
+            "description": "Well-formed but never-issued user uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_USER_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_USER_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate User - Success (Active -> Deactivated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}/deactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}",
+                "deactivate"
+              ]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.10.5: Active -> Deactivated (offboarded). Deactivated is terminal \u2014 run this last."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"User status is now Deactivated\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"DEACTIVATED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate User - Invalid Transition (Deactivated -> Deactivated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userUuid}}/deactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userUuid}}",
+                "deactivate"
+              ]
+            },
+            "description": "Run immediately after 'Deactivate User - Success' so the user is already Deactivated (a terminal state)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is USR_INVALID_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"USR_INVALID_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Every public User Management endpoint under /api/v1/users, in a single folder mirroring Organization's per-resource convention (User Management has exactly one resource)."
+    }
+  ]
+}
