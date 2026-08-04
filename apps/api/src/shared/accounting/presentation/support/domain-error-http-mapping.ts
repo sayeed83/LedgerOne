@@ -26,6 +26,12 @@ import {
   InvalidExchangeRateValueError,
   DuplicateExchangeRateError,
   InvalidDecimalValueError,
+  TaxGroupNotFoundError,
+  DuplicateTaxGroupNameError,
+  TaxRuleNotFoundError,
+  TaxRuleOverlapError,
+  InvalidTaxRuleEffectiveDateRangeError,
+  InvalidTaxRateValueError,
 } from "../../business/accounting-errors";
 
 export interface HttpErrorMapping {
@@ -87,6 +93,24 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof InvalidDecimalValueError) {
     return { status: 422, code: "ACC_INVALID_DECIMAL_VALUE" };
+  }
+  if (error instanceof TaxGroupNotFoundError) {
+    return { status: 404, code: "ACC_TAX_GROUP_NOT_FOUND" };
+  }
+  if (error instanceof DuplicateTaxGroupNameError) {
+    return { status: 409, code: "ACC_DUPLICATE_TAX_GROUP_NAME" };
+  }
+  if (error instanceof TaxRuleNotFoundError) {
+    return { status: 404, code: "ACC_TAX_RULE_NOT_FOUND" };
+  }
+  if (error instanceof TaxRuleOverlapError) {
+    return { status: 409, code: "ACC_TAX_RULE_OVERLAP" };
+  }
+  if (error instanceof InvalidTaxRuleEffectiveDateRangeError) {
+    return { status: 422, code: "ACC_INVALID_TAX_RULE_EFFECTIVE_DATE_RANGE" };
+  }
+  if (error instanceof InvalidTaxRateValueError) {
+    return { status: 422, code: "ACC_INVALID_TAX_RATE_VALUE" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

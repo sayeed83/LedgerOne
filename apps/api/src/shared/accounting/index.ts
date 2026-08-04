@@ -29,6 +29,13 @@ import { deactivateCurrencyController } from "./presentation/controllers/v1/deac
 import { createExchangeRateController } from "./presentation/controllers/v1/create-exchange-rate.controller";
 import { getExchangeRateController } from "./presentation/controllers/v1/get-exchange-rate.controller";
 import { listExchangeRatesController } from "./presentation/controllers/v1/list-exchange-rates.controller";
+import { createTaxGroupController } from "./presentation/controllers/v1/create-tax-group.controller";
+import { getTaxGroupController } from "./presentation/controllers/v1/get-tax-group.controller";
+import { updateTaxGroupController } from "./presentation/controllers/v1/update-tax-group.controller";
+import { listTaxGroupsController } from "./presentation/controllers/v1/list-tax-groups.controller";
+import { createTaxRuleController } from "./presentation/controllers/v1/create-tax-rule.controller";
+import { getTaxRuleController } from "./presentation/controllers/v1/get-tax-rule.controller";
+import { listTaxRulesController } from "./presentation/controllers/v1/list-tax-rules.controller";
 
 export function createAccountingRouter(deps: AccountingDependencies): Router {
   const router = Router();
@@ -78,6 +85,27 @@ export function createAccountingRouter(deps: AccountingDependencies): Router {
   router.post("/exchange-rates", createExchangeRateController(deps));
   router.get("/exchange-rates", listExchangeRatesController(deps));
   router.get("/exchange-rates/:exchangeRateUuid", getExchangeRateController(deps));
+
+  // --- Tax Group ---
+  // Tenant-owned (MT-001), mirroring Financial Year's own `companyUuid`
+  // ownership shape (00_BUSINESS_RULES.md Ch.67.13's "Finance Manager or
+  // Company Administrator approval" implies Company-level configuration,
+  // not platform-wide reference data). No delete/lifecycle endpoint — Ch.67
+  // documents no state machine (Ch.67.5 — "static, low-change reference
+  // data"), only a name that may be revised.
+  router.post("/tax-groups", createTaxGroupController(deps));
+  router.get("/tax-groups", listTaxGroupsController(deps));
+  router.get("/tax-groups/:taxGroupUuid", getTaxGroupController(deps));
+  router.put("/tax-groups/:taxGroupUuid", updateTaxGroupController(deps));
+
+  // --- Tax Rule ---
+  // Tenant-owned (MT-001), mirroring its parent Tax Group's ownership. No
+  // update/remove endpoint — a Tax Rule is immutable once created (Ch.68.7
+  // TXR-003 — "a rate correction requires a new, dated rule"), mirroring
+  // Exchange Rate's own immutable-time-series posture.
+  router.post("/tax-rules", createTaxRuleController(deps));
+  router.get("/tax-rules", listTaxRulesController(deps));
+  router.get("/tax-rules/:taxRuleUuid", getTaxRuleController(deps));
 
   return router;
 }

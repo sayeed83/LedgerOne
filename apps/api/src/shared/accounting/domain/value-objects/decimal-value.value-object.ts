@@ -44,6 +44,11 @@ import { InvalidDecimalValueError } from "../errors/accounting.errors";
 // Ch.31.8 explicitly requires "Rate value must be a positive number", and
 // this is that validation's actual first real caller
 // (business/create-exchange-rate.service.ts), not a speculative addition.
+// `isNegative()` is a second, later addition — 00_BUSINESS_RULES.md Ch.68.8
+// requires a Tax Rule's rate to be "a non-negative percentage" (zero is
+// explicitly valid, per Ch.67.11's "Zero Rate" Tax Group example — reusing
+// the stricter `isPositive()` would wrongly reject it), and this is that
+// validation's actual first real caller (business/create-tax-rule.service.ts).
 export class DecimalValue {
   private constructor(private readonly value: string) {}
 
@@ -68,6 +73,11 @@ export class DecimalValue {
   /** True if the value is strictly greater than zero (00_BUSINESS_RULES.md Ch.31.8 — "Rate value must be a positive number"). */
   isPositive(): boolean {
     return !this.value.startsWith("-") && this.value !== "0";
+  }
+
+  /** True if the value is strictly less than zero (00_BUSINESS_RULES.md Ch.68.8 — a Tax Rule's rate "must be a non-negative percentage"; zero itself is not negative). */
+  isNegative(): boolean {
+    return this.value.startsWith("-");
   }
 }
 

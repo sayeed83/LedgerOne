@@ -15,6 +15,12 @@ import {
   Currency as CurrencyModel,
   CurrencyStatus as PrismaCurrencyStatus,
   ExchangeRate as ExchangeRateModel,
+  TaxGroup as TaxGroupModel,
+  TaxRule as TaxRuleModel,
+  AccountGroup as AccountGroupModel,
+  AccountType as PrismaAccountType,
+  Account as AccountModel,
+  AccountStatus as PrismaAccountStatus,
 } from "../../../database/generated/client";
 import {
   FinancialYear,
@@ -28,14 +34,23 @@ import {
 } from "../domain/aggregates/fiscal-period.aggregate";
 import { Currency, CreateCurrencyProps, UpdateCurrencyProps } from "../domain/aggregates/currency.aggregate";
 import { ExchangeRate, CreateExchangeRateProps } from "../domain/entities/exchange-rate.entity";
+import { TaxGroup, CreateTaxGroupProps, UpdateTaxGroupProps } from "../domain/entities/tax-group.entity";
+import { TaxRule, CreateTaxRuleProps } from "../domain/entities/tax-rule.entity";
+import { AccountGroup, CreateAccountGroupProps, UpdateAccountGroupProps } from "../domain/entities/account-group.entity";
+import { Account, CreateAccountProps, UpdateAccountProps } from "../domain/aggregates/account.aggregate";
 import { DecimalValue } from "../domain/value-objects/decimal-value.value-object";
 import { FinancialYearStatus } from "../domain/enums/financial-year-status.enum";
 import { FiscalPeriodStatus } from "../domain/enums/fiscal-period-status.enum";
 import { CurrencyStatus } from "../domain/enums/currency-status.enum";
+import { AccountType } from "../domain/enums/account-type.enum";
+import { AccountStatus } from "../domain/enums/account-status.enum";
 import {
   FinancialYearNotFoundError,
   FiscalPeriodNotFoundError,
   CurrencyNotFoundError,
+  TaxGroupNotFoundError,
+  AccountGroupNotFoundError,
+  AccountNotFoundError,
 } from "../domain/errors/accounting.errors";
 import { IAccountingRepository, RepositoryTransaction } from "../domain/interfaces/accounting-repository.interface";
 
@@ -101,6 +116,79 @@ function toExchangeRateDomain(row: ExchangeRateModel): ExchangeRate {
     // (decimal-value.value-object.ts's pattern only accepts fixed notation).
     DecimalValue.create(row.rate.toFixed()),
     row.effectiveDate,
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+function toTaxGroupDomain(row: TaxGroupModel): TaxGroup {
+  return new TaxGroup(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.companyUuid,
+    row.name,
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+function toTaxRuleDomain(row: TaxRuleModel): TaxRule {
+  return new TaxRule(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.taxGroupId,
+    // `.toFixed()` (not `.toString()`) guarantees plain fixed-point decimal
+    // notation, never exponential notation, as the input to `DecimalValue`
+    // (mirroring toExchangeRateDomain's own mapping).
+    DecimalValue.create(row.rate.toFixed()),
+    row.effectiveFrom,
+    row.effectiveTo,
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+function toAccountGroupDomain(row: AccountGroupModel): AccountGroup {
+  return new AccountGroup(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.companyUuid,
+    row.name,
+    row.accountType as unknown as AccountType,
+    row.parentAccountGroupId,
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+function toAccountDomain(row: AccountModel): Account {
+  return new Account(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.companyUuid,
+    row.code,
+    row.name,
+    row.accountType as unknown as AccountType,
+    row.accountGroupId,
+    row.parentAccountId,
+    row.isPostingAccount,
+    row.status as unknown as AccountStatus,
     row.createdAt,
     row.updatedAt,
     row.createdBy,
@@ -501,5 +589,289 @@ export class PrismaAccountingRepository implements IAccountingRepository {
       orderBy: { effectiveDate: "desc" },
     });
     return rows.map(toExchangeRateDomain);
+  }
+
+  // TaxGroup is tenant-owned (06_DATABASE_STANDARDS.md MT-001) — every query
+  // below asserts `tenantId` explicitly and independently, never trusting a
+  // previously-resolved row (MT-002). `id` is never accepted from outside
+  // this file (PK-003) — mutations key on `(tenantId, uuid)`. `companyUuid`
+  // is a cross-module reference (FK-002) to Organization's `companies.uuid`
+  // — no cross-repository existence validation (a future Business-layer
+  // concern, mirroring `companyUuid` handling on FinancialYear/FiscalPeriod).
+
+  async createTaxGroup(tenantId: bigint, props: CreateTaxGroupProps, tx?: RepositoryTransaction): Promise<TaxGroup> {
+    const row = await this.client(tx).taxGroup.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        companyUuid: props.companyUuid,
+        name: props.name,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toTaxGroupDomain(row);
+  }
+
+  async findTaxGroupByUuid(tenantId: bigint, uuid: string): Promise<TaxGroup | null> {
+    const row = await prisma.taxGroup.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toTaxGroupDomain(row) : null;
+  }
+
+  async listTaxGroups(tenantId: bigint, companyUuid?: string): Promise<TaxGroup[]> {
+    const rows = await prisma.taxGroup.findMany({
+      where: { tenantId, companyUuid, deletedAt: null },
+      orderBy: { name: "asc" },
+    });
+    return rows.map(toTaxGroupDomain);
+  }
+
+  async updateTaxGroup(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateTaxGroupProps,
+    tx?: RepositoryTransaction,
+  ): Promise<TaxGroup> {
+    const client = this.client(tx);
+    const { count } = await client.taxGroup.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: {
+        name: props.name,
+        updatedBy: props.updatedBy ?? undefined,
+      },
+    });
+    if (count === 0) {
+      throw new TaxGroupNotFoundError(uuid);
+    }
+    const row = await client.taxGroup.findFirst({ where: { tenantId, uuid } });
+    return toTaxGroupDomain(row as TaxGroupModel);
+  }
+
+  // TaxRule is tenant-owned (06_DATABASE_STANDARDS.md MT-001) — every query
+  // below asserts `tenantId` explicitly and independently (MT-002).
+  // `taxGroupId` is a real, in-module FK (accounting.prisma) — accepted as
+  // a plain bigint, no cross-repository validation that the referenced Tax
+  // Group exists (a future Business-layer concern, mirroring
+  // `financialYearId`/`fromCurrencyId` handling elsewhere in this file).
+  // Immutable, versioned-by-effective-date record (Ch.68.5/TXR-003) — no
+  // update/remove method.
+
+  async createTaxRule(tenantId: bigint, props: CreateTaxRuleProps, tx?: RepositoryTransaction): Promise<TaxRule> {
+    const row = await this.client(tx).taxRule.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        taxGroupId: props.taxGroupId,
+        // `DecimalValue.toString()` — Prisma's `Decimal` field accepts a
+        // plain decimal string as create input.
+        rate: props.rate.toString(),
+        effectiveFrom: props.effectiveFrom,
+        effectiveTo: props.effectiveTo ?? null,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toTaxRuleDomain(row);
+  }
+
+  async findTaxRuleByUuid(tenantId: bigint, uuid: string): Promise<TaxRule | null> {
+    const row = await prisma.taxRule.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toTaxRuleDomain(row) : null;
+  }
+
+  async listTaxRules(tenantId: bigint, taxGroupId?: bigint): Promise<TaxRule[]> {
+    const rows = await prisma.taxRule.findMany({
+      where: { tenantId, taxGroupId, deletedAt: null },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    return rows.map(toTaxRuleDomain);
+  }
+
+  // AccountGroup is tenant-owned (06_DATABASE_STANDARDS.md MT-001) — every
+  // query below asserts `tenantId` explicitly and independently (MT-002).
+  // `id` is never accepted from outside this file (PK-003) — mutations key
+  // on `(tenantId, uuid)`. `companyUuid` is a cross-module reference
+  // (FK-002) to Organization's `companies.uuid` — no cross-repository
+  // existence validation (a future Business-layer concern).
+  // `parentAccountGroupId` is a real, self-referential in-module FK — no
+  // cross-repository cycle/existence validation here either (Ch.18 AGP-003's
+  // type-consistency-throughout-nesting is a Business-layer concern).
+
+  async createAccountGroup(
+    tenantId: bigint,
+    props: CreateAccountGroupProps,
+    tx?: RepositoryTransaction,
+  ): Promise<AccountGroup> {
+    const row = await this.client(tx).accountGroup.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        companyUuid: props.companyUuid,
+        name: props.name,
+        accountType: props.accountType as unknown as PrismaAccountType,
+        parentAccountGroupId: props.parentAccountGroupId ?? null,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toAccountGroupDomain(row);
+  }
+
+  async findAccountGroupByUuid(tenantId: bigint, uuid: string): Promise<AccountGroup | null> {
+    const row = await prisma.accountGroup.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toAccountGroupDomain(row) : null;
+  }
+
+  async listAccountGroups(tenantId: bigint, companyUuid?: string): Promise<AccountGroup[]> {
+    const rows = await prisma.accountGroup.findMany({
+      where: { tenantId, companyUuid, deletedAt: null },
+      orderBy: { name: "asc" },
+    });
+    return rows.map(toAccountGroupDomain);
+  }
+
+  async updateAccountGroup(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateAccountGroupProps,
+    tx?: RepositoryTransaction,
+  ): Promise<AccountGroup> {
+    const client = this.client(tx);
+    const { count } = await client.accountGroup.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: {
+        name: props.name,
+        accountType: props.accountType as unknown as PrismaAccountType | undefined,
+        parentAccountGroupId: props.parentAccountGroupId,
+        updatedBy: props.updatedBy ?? undefined,
+      },
+    });
+    if (count === 0) {
+      throw new AccountGroupNotFoundError(uuid);
+    }
+    const row = await client.accountGroup.findFirst({ where: { tenantId, uuid } });
+    return toAccountGroupDomain(row as AccountGroupModel);
+  }
+
+  // Account is tenant-owned (06_DATABASE_STANDARDS.md MT-001) — every query
+  // below asserts `tenantId` explicitly and independently (MT-002).
+  // `id` is never accepted from outside this file (PK-003) — mutations key
+  // on `(tenantId, uuid)`. `accountGroupId`/`parentAccountId` are real,
+  // in-module FKs — accepted as plain bigints, no cross-repository
+  // existence/type-compatibility validation (Ch.18 AGP-002, Ch.17 COA-002 —
+  // both future Business-layer concerns).
+
+  async createAccount(tenantId: bigint, props: CreateAccountProps, tx?: RepositoryTransaction): Promise<Account> {
+    const row = await this.client(tx).account.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        companyUuid: props.companyUuid,
+        code: props.code,
+        name: props.name,
+        accountType: props.accountType as unknown as PrismaAccountType,
+        accountGroupId: props.accountGroupId,
+        parentAccountId: props.parentAccountId ?? null,
+        isPostingAccount: props.isPostingAccount ?? true,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toAccountDomain(row);
+  }
+
+  async findAccountByUuid(tenantId: bigint, uuid: string): Promise<Account | null> {
+    const row = await prisma.account.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toAccountDomain(row) : null;
+  }
+
+  async findAccountByCode(tenantId: bigint, companyUuid: string, code: string): Promise<Account | null> {
+    const row = await prisma.account.findFirst({
+      where: { tenantId, companyUuid, code, deletedAt: null },
+    });
+    return row ? toAccountDomain(row) : null;
+  }
+
+  async listAccounts(
+    tenantId: bigint,
+    companyUuid?: string,
+    accountGroupId?: bigint,
+    status?: AccountStatus,
+  ): Promise<Account[]> {
+    const rows = await prisma.account.findMany({
+      where: {
+        tenantId,
+        companyUuid,
+        accountGroupId,
+        status: status ? (status as unknown as PrismaAccountStatus) : undefined,
+        deletedAt: null,
+      },
+      orderBy: { code: "asc" },
+    });
+    return rows.map(toAccountDomain);
+  }
+
+  async updateAccount(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateAccountProps,
+    tx?: RepositoryTransaction,
+  ): Promise<Account> {
+    const client = this.client(tx);
+    const { count } = await client.account.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: {
+        name: props.name,
+        accountGroupId: props.accountGroupId,
+        parentAccountId: props.parentAccountId,
+        isPostingAccount: props.isPostingAccount,
+        updatedBy: props.updatedBy ?? undefined,
+      },
+    });
+    if (count === 0) {
+      throw new AccountNotFoundError(uuid);
+    }
+    const row = await client.account.findFirst({ where: { tenantId, uuid } });
+    return toAccountDomain(row as AccountModel);
+  }
+
+  async activateAccount(
+    tenantId: bigint,
+    uuid: string,
+    updatedBy?: bigint | null,
+    tx?: RepositoryTransaction,
+  ): Promise<Account> {
+    const client = this.client(tx);
+    const { count } = await client.account.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: { status: PrismaAccountStatus.ACTIVE, updatedBy: updatedBy ?? undefined },
+    });
+    if (count === 0) {
+      throw new AccountNotFoundError(uuid);
+    }
+    const row = await client.account.findFirst({ where: { tenantId, uuid } });
+    return toAccountDomain(row as AccountModel);
+  }
+
+  async deactivateAccount(
+    tenantId: bigint,
+    uuid: string,
+    updatedBy?: bigint | null,
+    tx?: RepositoryTransaction,
+  ): Promise<Account> {
+    const client = this.client(tx);
+    const { count } = await client.account.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: { status: PrismaAccountStatus.INACTIVE, updatedBy: updatedBy ?? undefined },
+    });
+    if (count === 0) {
+      throw new AccountNotFoundError(uuid);
+    }
+    const row = await client.account.findFirst({ where: { tenantId, uuid } });
+    return toAccountDomain(row as AccountModel);
   }
 }

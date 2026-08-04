@@ -18,6 +18,8 @@ import {
   buildFiscalPeriod,
   buildCurrency,
   buildExchangeRate,
+  buildTaxGroup,
+  buildTaxRule,
   createFakeAccountingRepository,
 } from "../../../src/shared/accounting/business/test-support/fixtures";
 
@@ -1084,6 +1086,402 @@ describe("Accounting routes", () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.data)).toBe(true);
       expect(res.body.data[0].uuid).toBe(rates[0].uuid);
+    });
+  });
+
+  describe("POST /api/v1/accounting/tax-groups", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-groups")
+        .send({ companyUuid: COMPANY_UUID, name: "Standard Rate" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 on malformed body", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-groups")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ companyUuid: "not-a-uuid" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 409 when a Tax Group with the same name already exists for the Company", async () => {
+      const deps = buildDeps();
+      (deps.repository.listTaxGroups as jest.Mock).mockResolvedValue([buildTaxGroup({ name: "Standard Rate" })]);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-groups")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ companyUuid: COMPANY_UUID, name: "Standard Rate" });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ACC_DUPLICATE_TAX_GROUP_NAME");
+    });
+
+    it("returns 201 with the created Tax Group, exposing only business fields (never id/tenantId/createdBy)", async () => {
+      const deps = buildDeps();
+      (deps.repository.listTaxGroups as jest.Mock).mockResolvedValue([]);
+      const created = buildTaxGroup({ companyUuid: COMPANY_UUID, name: "Standard Rate" });
+      (deps.repository.createTaxGroup as jest.Mock).mockResolvedValue(created);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-groups")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ companyUuid: COMPANY_UUID, name: "Standard Rate" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.uuid).toBe(created.uuid);
+      expect(res.body.data.companyUuid).toBe(COMPANY_UUID);
+      expect(res.body.data.name).toBe("Standard Rate");
+      expect(res.body.data.id).toBeUndefined();
+      expect(res.body.data.tenantId).toBeUndefined();
+      expect(res.body.data.createdBy).toBeUndefined();
+      expect(res.body.data.updatedBy).toBeUndefined();
+      expect(res.body.data.deletedAt).toBeUndefined();
+    });
+  });
+
+  describe("GET /api/v1/accounting/tax-groups", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps)).get("/api/v1/accounting/tax-groups");
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 200 with the tenant's Tax Groups as an array", async () => {
+      const deps = buildDeps();
+      const groups = [buildTaxGroup()];
+      (deps.repository.listTaxGroups as jest.Mock).mockResolvedValue(groups);
+
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/tax-groups")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data[0].uuid).toBe(groups[0].uuid);
+    });
+  });
+
+  describe("GET /api/v1/accounting/tax-groups/:taxGroupUuid", () => {
+    it("returns 422 for a malformed uuid", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/tax-groups/not-a-uuid")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 404 when the Tax Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/tax-groups/${buildTaxGroup().uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_TAX_GROUP_NOT_FOUND");
+    });
+
+    it("returns 200 with the Tax Group", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup();
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/tax-groups/${taxGroup.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.uuid).toBe(taxGroup.uuid);
+      expect(res.body.data.companyUuid).toBe(taxGroup.companyUuid);
+    });
+  });
+
+  describe("PUT /api/v1/accounting/tax-groups/:taxGroupUuid", () => {
+    it("returns 404 when the Tax Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/tax-groups/${buildTaxGroup().uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ name: "Revised" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_TAX_GROUP_NOT_FOUND");
+    });
+
+    it("returns 409 when the revised name is already used by another Tax Group in the same Company", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ uuid: "00000000-0000-0000-0000-000000000400", name: "Standard Rate" });
+      const other = buildTaxGroup({ uuid: "00000000-0000-0000-0000-000000000401", name: "Zero Rate" });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+      (deps.repository.listTaxGroups as jest.Mock).mockResolvedValue([taxGroup, other]);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/tax-groups/${taxGroup.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ name: "Zero Rate" });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ACC_DUPLICATE_TAX_GROUP_NAME");
+    });
+
+    it("returns 200 with the updated Tax Group", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ name: "Standard Rate" });
+      const updated = buildTaxGroup({ name: "Standard Rate (Revised)" });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+      (deps.repository.listTaxGroups as jest.Mock).mockResolvedValue([taxGroup]);
+      (deps.repository.updateTaxGroup as jest.Mock).mockResolvedValue(updated);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/tax-groups/${taxGroup.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ name: "Standard Rate (Revised)" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.name).toBe("Standard Rate (Revised)");
+    });
+  });
+
+  describe("POST /api/v1/accounting/tax-rules", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .send({ taxGroupUuid: buildTaxGroup().uuid, rate: "18.0000", effectiveFrom: "2026-04-01" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 on malformed body", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ taxGroupUuid: "not-a-uuid" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 (ACC_INVALID_DECIMAL_VALUE) when rate is not a well-formed decimal", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ id: 1n });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ taxGroupUuid: taxGroup.uuid, rate: "not-a-number", effectiveFrom: "2026-04-01" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_INVALID_DECIMAL_VALUE");
+    });
+
+    it("returns 404 when the parent Tax Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ taxGroupUuid: buildTaxGroup().uuid, rate: "18.0000", effectiveFrom: "2026-04-01" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_TAX_GROUP_NOT_FOUND");
+    });
+
+    it("returns 422 (ACC_INVALID_TAX_RATE_VALUE) when the rate is negative", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ id: 1n });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ taxGroupUuid: taxGroup.uuid, rate: "-5", effectiveFrom: "2026-04-01" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_INVALID_TAX_RATE_VALUE");
+    });
+
+    it("accepts a zero rate (Zero Rate Tax Group, 00_BUSINESS_RULES.md Ch.67.11)", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ id: 1n });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+      (deps.repository.listTaxRules as jest.Mock).mockResolvedValue([]);
+      (deps.repository.createTaxRule as jest.Mock).mockResolvedValue(buildTaxRule({ rate: DecimalValue.create("0") }));
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ taxGroupUuid: taxGroup.uuid, rate: "0", effectiveFrom: "2026-04-01" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.rate).toBe("0");
+    });
+
+    it("returns 422 (ACC_INVALID_TAX_RULE_EFFECTIVE_DATE_RANGE) when effectiveTo is before effectiveFrom", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ id: 1n });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ taxGroupUuid: taxGroup.uuid, rate: "18", effectiveFrom: "2026-04-01", effectiveTo: "2026-03-01" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_INVALID_TAX_RULE_EFFECTIVE_DATE_RANGE");
+    });
+
+    it("returns 409 when the new range overlaps an existing Tax Rule for the same Tax Group", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ id: 1n, uuid: "00000000-0000-0000-0000-000000000400" });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+      (deps.repository.listTaxRules as jest.Mock).mockResolvedValue([
+        buildTaxRule({
+          taxGroupId: 1n,
+          effectiveFrom: new Date("2026-01-01T00:00:00.000Z"),
+          effectiveTo: new Date("2026-12-31T00:00:00.000Z"),
+        }),
+      ]);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ taxGroupUuid: taxGroup.uuid, rate: "18", effectiveFrom: "2026-06-01" });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ACC_TAX_RULE_OVERLAP");
+    });
+
+    it("returns 201 with the created Tax Rule, exposing only business fields (never id/tenantId/taxGroupId/createdBy)", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ id: 1n, uuid: "00000000-0000-0000-0000-000000000400" });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+      (deps.repository.listTaxRules as jest.Mock).mockResolvedValue([]);
+      const created = buildTaxRule({ taxGroupId: 1n, rate: DecimalValue.create("18.0000") });
+      (deps.repository.createTaxRule as jest.Mock).mockResolvedValue(created);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ taxGroupUuid: taxGroup.uuid, rate: "18.0000", effectiveFrom: "2026-04-01" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.uuid).toBe(created.uuid);
+      expect(res.body.data.rate).toBe("18");
+      expect(res.body.data.id).toBeUndefined();
+      expect(res.body.data.tenantId).toBeUndefined();
+      expect(res.body.data.taxGroupId).toBeUndefined();
+      expect(res.body.data.createdBy).toBeUndefined();
+      expect(res.body.data.updatedBy).toBeUndefined();
+      expect(res.body.data.deletedAt).toBeUndefined();
+    });
+  });
+
+  describe("GET /api/v1/accounting/tax-rules", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps)).get("/api/v1/accounting/tax-rules");
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 200 with the tenant's Tax Rules as an array", async () => {
+      const deps = buildDeps();
+      const rules = [buildTaxRule()];
+      (deps.repository.listTaxRules as jest.Mock).mockResolvedValue(rules);
+
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/tax-rules")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data[0].uuid).toBe(rules[0].uuid);
+    });
+
+    it("resolves ?taxGroupUuid= to its internal id before filtering", async () => {
+      const deps = buildDeps();
+      const taxGroup = buildTaxGroup({ id: 10n, uuid: "00000000-0000-0000-0000-000000000400" });
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(taxGroup);
+      (deps.repository.listTaxRules as jest.Mock).mockResolvedValue([]);
+
+      await request(buildApp(deps))
+        .get("/api/v1/accounting/tax-rules")
+        .query({ taxGroupUuid: taxGroup.uuid })
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(deps.repository.listTaxRules).toHaveBeenCalledWith(1n, 10n);
+    });
+
+    it("returns 404 when the filtering Tax Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findTaxGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/tax-rules")
+        .query({ taxGroupUuid: buildTaxGroup().uuid })
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_TAX_GROUP_NOT_FOUND");
+    });
+  });
+
+  describe("GET /api/v1/accounting/tax-rules/:taxRuleUuid", () => {
+    it("returns 422 for a malformed uuid", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/tax-rules/not-a-uuid")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 404 when the Tax Rule does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findTaxRuleByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/tax-rules/${buildTaxRule().uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_TAX_RULE_NOT_FOUND");
+    });
+
+    it("returns 200 with the Tax Rule", async () => {
+      const deps = buildDeps();
+      const taxRule = buildTaxRule();
+      (deps.repository.findTaxRuleByUuid as jest.Mock).mockResolvedValue(taxRule);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/tax-rules/${taxRule.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.uuid).toBe(taxRule.uuid);
+      expect(res.body.data.rate).toBe(taxRule.rate.toString());
     });
   });
 });

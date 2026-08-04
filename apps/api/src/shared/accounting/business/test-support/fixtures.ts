@@ -9,6 +9,12 @@ import { FiscalPeriodStatus } from "../../domain/enums/fiscal-period-status.enum
 import { Currency } from "../../domain/aggregates/currency.aggregate";
 import { CurrencyStatus } from "../../domain/enums/currency-status.enum";
 import { ExchangeRate } from "../../domain/entities/exchange-rate.entity";
+import { TaxGroup } from "../../domain/entities/tax-group.entity";
+import { TaxRule } from "../../domain/entities/tax-rule.entity";
+import { AccountGroup } from "../../domain/entities/account-group.entity";
+import { Account } from "../../domain/aggregates/account.aggregate";
+import { AccountType } from "../../domain/enums/account-type.enum";
+import { AccountStatus } from "../../domain/enums/account-status.enum";
 import { DecimalValue } from "../../domain/value-objects/decimal-value.value-object";
 import { IAccountingRepository } from "../../domain/interfaces/accounting-repository.interface";
 
@@ -83,6 +89,80 @@ export function buildExchangeRate(overrides: Partial<ExchangeRate> = {}): Exchan
   return Object.assign(Object.create(ExchangeRate.prototype), base, overrides) as ExchangeRate;
 }
 
+export function buildTaxGroup(overrides: Partial<TaxGroup> = {}): TaxGroup {
+  const base = new TaxGroup(
+    1n,
+    "00000000-0000-0000-0000-000000000400",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    "Standard Rate",
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(TaxGroup.prototype), base, overrides) as TaxGroup;
+}
+
+export function buildTaxRule(overrides: Partial<TaxRule> = {}): TaxRule {
+  const base = new TaxRule(
+    1n,
+    "00000000-0000-0000-0000-000000000500",
+    1n,
+    1n,
+    DecimalValue.create("18.0000"),
+    new Date("2026-04-01T00:00:00.000Z"),
+    null,
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(TaxRule.prototype), base, overrides) as TaxRule;
+}
+
+export function buildAccountGroup(overrides: Partial<AccountGroup> = {}): AccountGroup {
+  const base = new AccountGroup(
+    1n,
+    "00000000-0000-0000-0000-000000000600",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    "Current Assets",
+    AccountType.Asset,
+    null,
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(AccountGroup.prototype), base, overrides) as AccountGroup;
+}
+
+export function buildAccount(overrides: Partial<Account> = {}): Account {
+  const base = new Account(
+    1n,
+    "00000000-0000-0000-0000-000000000700",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    "1000",
+    "Cash",
+    AccountType.Asset,
+    1n,
+    null,
+    true,
+    AccountStatus.Draft,
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(Account.prototype), base, overrides) as Account;
+}
+
 export function createFakeAccountingRepository(): jest.Mocked<IAccountingRepository> {
   return {
     createFinancialYear: jest.fn(),
@@ -110,5 +190,23 @@ export function createFakeAccountingRepository(): jest.Mocked<IAccountingReposit
     createExchangeRate: jest.fn(),
     findExchangeRateByUuid: jest.fn(),
     listExchangeRates: jest.fn(),
+    createTaxGroup: jest.fn(),
+    findTaxGroupByUuid: jest.fn(),
+    listTaxGroups: jest.fn(),
+    updateTaxGroup: jest.fn(),
+    createTaxRule: jest.fn(),
+    findTaxRuleByUuid: jest.fn(),
+    listTaxRules: jest.fn(),
+    createAccountGroup: jest.fn(),
+    findAccountGroupByUuid: jest.fn(),
+    listAccountGroups: jest.fn(),
+    updateAccountGroup: jest.fn(),
+    createAccount: jest.fn(),
+    findAccountByUuid: jest.fn(),
+    findAccountByCode: jest.fn(),
+    listAccounts: jest.fn(),
+    updateAccount: jest.fn(),
+    activateAccount: jest.fn(),
+    deactivateAccount: jest.fn(),
   };
 }

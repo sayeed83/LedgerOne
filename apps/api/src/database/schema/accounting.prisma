@@ -6,11 +6,66 @@
 //
 // Module ownership: this module owns Financial Year (the annual reporting-cycle
 // definition, Ch.5), Fiscal Period (the monthly-typical subdivision of a
-// Financial Year, Ch.6), Currency (Ch.7), and Exchange Rate (Ch.31) —
-// Database + Repository milestone for Currency/Exchange Rate. Financial
-// Closing (Ch.32), Chart of Accounts (Ch.17), and Journal Entries (Ch.19-20)
-// are distinct entities/chapters and are explicitly not part of this schema
-// yet.
+// Financial Year, Ch.6), Currency (Ch.7), Exchange Rate (Ch.31), Tax Group
+// (Ch.67), Tax Rule (Ch.68), Account Group (Ch.18), and Account (Ch.17) —
+// Database + Repository milestone for Account Group/Account. Financial
+// Closing (Ch.32) and Journal Entries (Ch.19-20) are distinct
+// entities/chapters and are explicitly not part of this schema yet.
+//
+// Chart of Accounts (Ch.17): NO separate `ChartOfAccounts` table is modeled.
+// Ch.17.10's `COMPANY ||--|| CHART_OF_ACCOUNTS : "owns one"` describes a
+// conceptual one-per-Company grouping, not a persisted entity with its own
+// attributes — Ch.17.3's "Owns:" list (the hierarchical list of accounts,
+// each account's type, normal balance, active/inactive status) describes
+// exactly `Account`'s own fields, and no chapter ever assigns
+// "Chart of Accounts" itself an independent field, rule, or lifecycle
+// distinct from Account's. A Company's Chart of Accounts is simply the set
+// of its own `Account` rows (`WHERE company_uuid = ?`), mirroring how
+// Ch.66's GST/Ch.69's Reverse Charge/Ch.70's Input Tax Credit were likewise
+// not modeled as tables in the Tax milestone for the identical reason —
+// flagged as a Handbook Deviation (documented in the milestone report), not
+// a guess.
+//
+// Posting vs. Summary Accounts: `Account.isPostingAccount` is a frozen
+// architectural decision (not literal Ch.17 text — the handbook's own
+// architecture-review chapter identified this distinction as undefined and
+// flagged it for a decision before implementation) — "Only Posting Accounts
+// may receive Journal Entry postings; Summary Accounts exist only for
+// hierarchy and reporting." Enforcing that restriction at Journal Entry
+// posting time is a future Journal Entries module's Business-layer concern
+// (Ch.20) — this milestone only persists the flag.
+//
+// Contra Accounts and Control Accounts are explicitly OUT OF SCOPE per
+// frozen architectural decision — no flag, sub-type, or reconciliation
+// behavior is modeled for either, mirroring how Tax Rule's jurisdiction
+// variation was left unmodeled rather than guessed.
+//
+// Tax (Part 8, Ch.66-70): only Tax Group (Ch.67) and Tax Rule (Ch.68) are
+// modeled as tables — GST (Ch.66.5: "not an entity with its own lifecycle"),
+// Reverse Charge (Ch.69.5: "not an independent entity — a calculation/
+// posting behavior applied to specific qualifying Purchase Invoices"), and
+// Input Tax Credit (Ch.70.5: "not an independent entity — a determination
+// and tracking mechanism applied to Purchase Invoice tax amounts") are all
+// explicitly documented as behaviors/calculations, not entities with their
+// own persisted lifecycle — inventing tables for them would contradict the
+// handbook's own scope statements, so they are deliberately not modeled
+// here (flagged as a Handbook Deviation in the milestone report, not a
+// guess).
+//
+// Tax Rule's jurisdiction-variation (Ch.68.3/68.10 — "potentially varying by
+// jurisdiction (Business Location, Ch.9)") is deliberately NOT modeled as a
+// `businessLocationUuid` reference: Business Location (Ch.9) has no table of
+// its own anywhere in the codebase yet (Organization's schema defines only
+// Tenant/Company/Branch/Department) — referencing a table that does not
+// exist would be inventing a shape the handbook never schemas itself.
+// Flagged as a Handbook Deviation rather than guessed.
+//
+// Tax Rule's "calculation basis" (Ch.68.3) is modeled as a single percentage
+// rate only — every worked example (Ch.66.11, Ch.67.11, Ch.68.11) is a
+// percentage-of-transaction-amount ("18% of pre-tax amount", "0% for
+// exports"); no second basis type (e.g., a fixed-amount tax) is ever
+// concretely defined, so no `basis` enum/discriminator column is introduced
+// speculatively.
 //
 // Cross-module references (FK-002): `companyUuid` is a plain indexed column
 // with no DB-level foreign key — the canonical Company row lives in
@@ -237,4 +292,245 @@ model ExchangeRate {
   @@index([fromCurrencyId], map: "idx_exchange_rates_from_currency_id")
   @@index([toCurrencyId], map: "idx_exchange_rates_to_currency_id")
   @@map("exchange_rates")
+}
+
+/// A named tax classification applied to Products/Product Categories
+/// (00_BUSINESS_RULES.md Ch.67.1), determining which Tax Rule (Ch.68)
+/// applies to a transaction. Tenant-owned (MT-001) and carries `companyUuid`
+/// directly (cross-module reference, FK-002, no DB-level FK) — Ch.67.13's
+/// "Finance Manager or Company Administrator approval" requirement implies
+/// Company-level configuration, mirroring Financial Year's own
+/// tenant+companyUuid ownership rather than Currency's platform ownership.
+/// No lifecycle/status column: Ch.67.5 documents Tax Group as "static,
+/// low-change reference data" with no state machine, unlike
+/// FinancialYear/FiscalPeriod/Currency — `deletedAt` (soft delete, Ch.8) is
+/// the only lifecycle signal this table carries. Database + Repository
+/// milestone only — TXG-001's "every taxable Product resolves to exactly
+/// one Tax Group" and TXG-002's jurisdiction variation are Business-layer/
+/// other-module concerns, not implemented here.
+model TaxGroup {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Tax Group name (00_BUSINESS_RULES.md Ch.67.1, e.g. "Standard Rate", "Zero Rate", "Exempt").
+  name String @db.VarChar(100) @map("name")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  taxRules TaxRule[]
+
+  /// Partial duplicate-name protection per Company (06_DATABASE_STANDARDS.md SD-004 pattern) — not explicit handbook text, a documented Handbook Deviation mirroring FinancialYear's own `uq_financial_years_company_start_date_deleted_at` reasoning.
+  @@unique([tenantId, companyUuid, name, deletedAt], map: "uq_tax_groups_tenant_company_name_deleted_at")
+  @@index([tenantId, companyUuid], map: "idx_tax_groups_tenant_company")
+  @@index([companyUuid], map: "idx_tax_groups_company_uuid")
+  @@map("tax_groups")
+}
+
+/// The specific calculation logic (rate, effective date range) a Tax Group
+/// (Ch.67) maps to (00_BUSINESS_RULES.md Ch.68.1). Tenant-owned (MT-001) —
+/// mirrors its parent Tax Group's ownership. `taxGroupId` is a real,
+/// in-module RESTRICT FK (FK-001/FK-003/FK-004) since both models live in
+/// this same schema file. Versioned by effective date (Ch.68.5, "similar to
+/// Price Lists") and immutable once created (TXR-003 — "a rate correction
+/// requires a new, dated rule", mirroring ExchangeRate's own
+/// Ch.31.5/EXR-002 immutability) — no update/remove Repository method is
+/// provided. `rate` is `DECIMAL(9,4)` — no handbook-documented
+/// precision/scale exists for a tax percentage (flagged as a Handbook
+/// Deviation, decided inline, mirroring ExchangeRate.rate's own documented
+/// precision deviation), sized for a percentage value (up to 99999.9999)
+/// rather than ExchangeRate's wider ratio-oriented DECIMAL(20,10). Database
+/// + Repository milestone only — TXR-001's non-overlap validation and
+/// TXR-002's date-of-transaction resolution are explicitly Business-layer
+/// concerns (mirroring FinancialYear/FiscalPeriod's own deferred overlap
+/// validation), not implemented here.
+model TaxRule {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  taxGroupId BigInt   @db.UnsignedBigInt @map("tax_group_id")
+  taxGroup   TaxGroup @relation(fields: [taxGroupId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Tax percentage rate (00_BUSINESS_RULES.md Ch.68.1/68.11, e.g. 18.0000 for "18% of pre-tax transaction amount").
+  rate Decimal @db.Decimal(9, 4) @map("rate")
+  /// Effective date range start (00_BUSINESS_RULES.md Ch.68.3/68.7 TXR-001) — inclusive.
+  effectiveFrom DateTime @db.DateTime(3) @map("effective_from")
+  /// Effective date range end (Ch.68.7 TXR-001) — inclusive; null means open-ended (still in effect, not yet superseded by a later-dated rule for the same Tax Group).
+  effectiveTo DateTime? @db.DateTime(3) @map("effective_to")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  /// Partial duplicate-start-date protection per Tax Group (SD-004 pattern), mirroring FiscalPeriod's own `uq_fiscal_periods_financial_year_start_date_deleted_at` reasoning — true overlap validation (TXR-001) is a Business-layer concern.
+  @@unique([taxGroupId, effectiveFrom, deletedAt], map: "uq_tax_rules_tax_group_effective_from_deleted_at")
+  @@index([tenantId, taxGroupId], map: "idx_tax_rules_tenant_tax_group")
+  @@index([taxGroupId], map: "idx_tax_rules_tax_group_id")
+  @@map("tax_rules")
+}
+
+/// The five fundamental account classifications (00_BUSINESS_RULES.md
+/// Ch.16 DBL-003/Ch.17.7 COA-001) — shared by both `AccountGroup` (Ch.18
+/// AGP-002 — a group's type must match every account assigned to it) and
+/// `Account` itself. Determines normal balance (Ch.16 DBL-003: Asset/Expense
+/// increase on Debit, Liability/Equity/Revenue increase on Credit) — normal
+/// balance is deliberately NOT a separate stored column, since it is a pure,
+/// universal function of `accountType` with no per-row variation; storing it
+/// independently would duplicate the same fact and risk drift.
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+
+  @@map("account_type")
+}
+
+/// A classification category organizing Accounts (Ch.17) into reporting
+/// groupings (00_BUSINESS_RULES.md Ch.18.1, e.g. "Current Assets", "Fixed
+/// Assets"). Tenant-owned (MT-001) and carries `companyUuid` directly
+/// (cross-module reference, FK-002, no DB-level FK), mirroring Tax Group's
+/// own tenant+companyUuid ownership shape — Ch.18.13's "Company
+/// Administrator approval" to modify the hierarchy implies Company-level
+/// configuration, not platform-wide reference data. Ch.18.5's "largely
+/// static, platform-provided standard groupings, with the option for
+/// Company-specific customization" describes a Business-layer seeding
+/// workflow (applying a standard template to a new Company), not a
+/// database-level platform-vs-tenant ownership split — no separate
+/// platform-owned "AccountGroupTemplate" table is modeled, since no chapter
+/// schemas one; flagged as a Handbook Deviation rather than invented.
+/// `parentAccountGroupId` is a real, in-module, self-referential RESTRICT FK
+/// (FK-001/FK-003/FK-004) supporting Ch.18 AGP-003's nesting. AGP-002's
+/// type-consistency-with-assigned-accounts and AGP-003's
+/// type-consistency-throughout-nesting are Business-layer concerns (cannot
+/// be expressed as a MySQL/Prisma declarative constraint across FK-linked
+/// rows), not implemented here — mirrors every other cross-row invariant
+/// this module has already deferred (FY-002 overlap, TXR-001 overlap).
+model AccountGroup {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Account Group name (00_BUSINESS_RULES.md Ch.18.1, e.g. "Current Assets", "Fixed Assets").
+  name String @db.VarChar(100) @map("name")
+
+  /// The account type this group classifies (Ch.18.7 AGP-002) — shared enum with `Account.accountType`.
+  accountType AccountType @map("account_type")
+
+  /// Self-referential parent for nested groupings (Ch.18.7 AGP-003, e.g. "Current Assets" containing "Cash and Equivalents").
+  parentAccountGroupId BigInt?       @db.UnsignedBigInt @map("parent_account_group_id")
+  parentAccountGroup   AccountGroup? @relation("AccountGroupHierarchy", fields: [parentAccountGroupId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  childAccountGroups    AccountGroup[] @relation("AccountGroupHierarchy")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  accounts Account[]
+
+  /// Partial duplicate-name protection per Company (SD-004 pattern), mirroring Tax Group's own `uq_tax_groups_tenant_company_name_deleted_at` reasoning — not explicit handbook text.
+  @@unique([tenantId, companyUuid, name, deletedAt], map: "uq_account_groups_tenant_company_name_deleted_at")
+  @@index([tenantId, companyUuid], map: "idx_account_groups_tenant_company")
+  @@index([companyUuid], map: "idx_account_groups_company_uuid")
+  @@index([parentAccountGroupId], map: "idx_account_groups_parent_account_group_id")
+  @@map("account_groups")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.17.5 Account lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4): Draft (proposed) -> Active (approved, postable) -> Inactive (no new postings, historical retained) -> Active (reactivated).
+enum AccountStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+
+  @@map("account_status")
+}
+
+/// An individual financial account within a Company's Chart of Accounts
+/// (00_BUSINESS_RULES.md Ch.17.1) — the classification unit every Journal
+/// Entry line will post against (a future Journal Entries module, Ch.20).
+/// Tenant-owned (MT-001) and carries `companyUuid` directly (cross-module
+/// reference, FK-002, no DB-level FK), mirroring Tax Group's own ownership
+/// shape — Ch.17.13's "Company Administrator (or delegated Finance Manager)
+/// approval" to create/modify/deactivate an account implies Company-level
+/// ownership. `accountGroupId` is a real, in-module RESTRICT FK
+/// (FK-001/FK-003/FK-004, Ch.18 AGP-001 — "every account must be assigned to
+/// exactly one Account Group") — required, not nullable.
+/// `parentAccountId` is a real, in-module, self-referential nullable
+/// RESTRICT FK (Ch.17.7 COA-002 — "an account may have a parent account").
+/// `code` is unique per Company with NO `deletedAt` composite — Ch.17.7
+/// COA-004 explicitly states codes "cannot be reused for a different
+/// account, even after deactivation," a deliberate never-reuse rule (unlike
+/// every other unique constraint in this module, which is only a
+/// documented Handbook Deviation for hygiene — COA-004 is literal handbook
+/// text). `isPostingAccount` implements the frozen architectural decision
+/// that only Posting Accounts may receive Journal Entry postings, Summary
+/// Accounts exist only for hierarchy/reporting — not literal Ch.17 text
+/// (flagged as a Handbook Deviation/frozen architectural decision, not
+/// guessed); enforcing the restriction at posting time is a future Journal
+/// Entries module's Business-layer concern. `accountType`'s immutability
+/// once the account has any posted transaction (COA-001) and COA-003's
+/// deactivation-blocked-while-non-zero-balance/open-transaction rule are
+/// both Business-layer concerns (this milestone has no Ledger/Journal Entry
+/// to check against yet) — not implemented here. No separate `normalBalance`
+/// column: derived purely from `accountType` (Ch.16 DBL-003), never stored
+/// independently.
+model Account {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Account code, unique per Company, never reused (Ch.17.7 COA-004) — e.g. "1000", "1200". VARCHAR(20) width inferred (no handbook-specified length), flagged inline rather than assumed silently.
+  code String @db.VarChar(20) @map("code")
+  /// Account name (00_BUSINESS_RULES.md Ch.17.8 — required, descriptive enough for unambiguous selection during transaction entry).
+  name String @db.VarChar(150) @map("name")
+
+  /// The account's fundamental type (Ch.17.7 COA-001) — shared enum with `AccountGroup.accountType`.
+  accountType AccountType @map("account_type")
+
+  accountGroupId BigInt       @db.UnsignedBigInt @map("account_group_id")
+  accountGroup   AccountGroup @relation(fields: [accountGroupId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Self-referential parent for account hierarchy (Ch.17.7 COA-002).
+  parentAccountId BigInt?  @db.UnsignedBigInt @map("parent_account_id")
+  parentAccount   Account? @relation("AccountHierarchy", fields: [parentAccountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  childAccounts   Account[] @relation("AccountHierarchy")
+
+  /// Frozen architectural decision: true = Posting Account (may receive Journal Entry postings); false = Summary Account (hierarchy/reporting only, no direct postings) — not literal Ch.17 text, see model-level doc comment.
+  isPostingAccount Boolean @default(true) @map("is_posting_account")
+
+  /// Account lifecycle (00_BUSINESS_RULES.md Ch.17.5): Draft/Active/Inactive.
+  status AccountStatus @default(DRAFT) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  /// Never-reuse per Company (Ch.17.7 COA-004) — deliberately no `deletedAt` in this composite, unlike every other unique constraint in this module.
+  @@unique([tenantId, companyUuid, code], map: "uq_accounts_tenant_company_code")
+  @@index([tenantId, companyUuid, status], map: "idx_accounts_tenant_company_status")
+  @@index([companyUuid], map: "idx_accounts_company_uuid")
+  @@index([accountGroupId], map: "idx_accounts_account_group_id")
+  @@index([parentAccountId], map: "idx_accounts_parent_account_id")
+  @@map("accounts")
 }

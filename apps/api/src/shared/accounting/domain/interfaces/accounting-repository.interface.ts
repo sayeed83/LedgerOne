@@ -30,7 +30,12 @@ import { FinancialYear, CreateFinancialYearProps, UpdateFinancialYearProps } fro
 import { FiscalPeriod, CreateFiscalPeriodProps, UpdateFiscalPeriodProps } from "../aggregates/fiscal-period.aggregate";
 import { Currency, CreateCurrencyProps, UpdateCurrencyProps } from "../aggregates/currency.aggregate";
 import { ExchangeRate, CreateExchangeRateProps } from "../entities/exchange-rate.entity";
+import { TaxGroup, CreateTaxGroupProps, UpdateTaxGroupProps } from "../entities/tax-group.entity";
+import { TaxRule, CreateTaxRuleProps } from "../entities/tax-rule.entity";
+import { AccountGroup, CreateAccountGroupProps, UpdateAccountGroupProps } from "../entities/account-group.entity";
+import { Account, CreateAccountProps, UpdateAccountProps } from "../aggregates/account.aggregate";
 import { CurrencyStatus } from "../enums/currency-status.enum";
+import { AccountStatus } from "../enums/account-status.enum";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -106,4 +111,43 @@ export interface IAccountingRepository {
   findExchangeRateByUuid(tenantId: bigint, uuid: string): Promise<ExchangeRate | null>;
   /** Optionally narrowed to a single currency pair; omitted, returns every Exchange Rate for the Tenant. Ordered by `effectiveDate` descending — resolving "most recently effective" (EXR-001, Ch.31.12) from this ordering is a Business-layer concern. */
   listExchangeRates(tenantId: bigint, fromCurrencyId?: bigint, toCurrencyId?: bigint): Promise<ExchangeRate[]>;
+
+  createTaxGroup(tenantId: bigint, props: CreateTaxGroupProps, tx?: RepositoryTransaction): Promise<TaxGroup>;
+  findTaxGroupByUuid(tenantId: bigint, uuid: string): Promise<TaxGroup | null>;
+  /** Optionally narrowed to a single Company (FK-002 `companyUuid`); omitted, returns every Tax Group for the Tenant. */
+  listTaxGroups(tenantId: bigint, companyUuid?: string): Promise<TaxGroup[]>;
+  updateTaxGroup(tenantId: bigint, uuid: string, props: UpdateTaxGroupProps, tx?: RepositoryTransaction): Promise<TaxGroup>;
+
+  createTaxRule(tenantId: bigint, props: CreateTaxRuleProps, tx?: RepositoryTransaction): Promise<TaxRule>;
+  findTaxRuleByUuid(tenantId: bigint, uuid: string): Promise<TaxRule | null>;
+  /** Optionally narrowed to a single Tax Group; omitted, returns every Tax Rule for the Tenant. Ordered by `effectiveFrom` descending — resolving the rule effective on a given transaction date (TXR-002, Ch.68.7) from this ordering is a Business-layer concern. */
+  listTaxRules(tenantId: bigint, taxGroupId?: bigint): Promise<TaxRule[]>;
+
+  createAccountGroup(tenantId: bigint, props: CreateAccountGroupProps, tx?: RepositoryTransaction): Promise<AccountGroup>;
+  findAccountGroupByUuid(tenantId: bigint, uuid: string): Promise<AccountGroup | null>;
+  /** Optionally narrowed to a single Company (FK-002 `companyUuid`); omitted, returns every Account Group for the Tenant. */
+  listAccountGroups(tenantId: bigint, companyUuid?: string): Promise<AccountGroup[]>;
+  updateAccountGroup(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateAccountGroupProps,
+    tx?: RepositoryTransaction,
+  ): Promise<AccountGroup>;
+
+  createAccount(tenantId: bigint, props: CreateAccountProps, tx?: RepositoryTransaction): Promise<Account>;
+  findAccountByUuid(tenantId: bigint, uuid: string): Promise<Account | null>;
+  /** Looked up by the natural `(tenantId, companyUuid, code)` unique key (Ch.17.7 COA-004) — never the internal `id`. */
+  findAccountByCode(tenantId: bigint, companyUuid: string, code: string): Promise<Account | null>;
+  /** Optionally narrowed to a single Company, a single Account Group, and/or a single lifecycle status; any/all may be omitted, returning every Account for the Tenant. */
+  listAccounts(
+    tenantId: bigint,
+    companyUuid?: string,
+    accountGroupId?: bigint,
+    status?: AccountStatus,
+  ): Promise<Account[]>;
+  updateAccount(tenantId: bigint, uuid: string, props: UpdateAccountProps, tx?: RepositoryTransaction): Promise<Account>;
+  /** Sets status to Active (00_BUSINESS_RULES.md Ch.17.5) — a raw persistence transition; validating the `from` state is a Business-layer concern (this milestone is Repository-only). */
+  activateAccount(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<Account>;
+  /** Sets status to Inactive (00_BUSINESS_RULES.md Ch.17.5) — a raw persistence transition; validating the `from` state and COA-003's non-zero-balance/open-transaction block are Business-layer concerns (this milestone is Repository-only). */
+  deactivateAccount(tenantId: bigint, uuid: string, updatedBy?: bigint | null, tx?: RepositoryTransaction): Promise<Account>;
 }

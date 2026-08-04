@@ -143,6 +143,31 @@ export class InvalidExchangeRateValueError extends DomainError {
   }
 }
 
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Account Group does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateAccountGroup` on zero rows matched (`updateMany`+refetch pattern). */
+export class AccountGroupNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Account Group '${identifier}' was not found.`);
+  }
+}
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Account does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateAccount`/`activateAccount`/`deactivateAccount` on zero rows matched (`updateMany`+refetch pattern). */
+export class AccountNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Account '${identifier}' was not found.`);
+  }
+}
+
+/**
+ * Raised when a requested status change does not follow the Account
+ * lifecycle state machine (00_BUSINESS_RULES.md Ch.17.5): Draft/Inactive →
+ * Active, Active → Inactive. Every other transition is invalid.
+ */
+export class InvalidAccountStatusTransitionError extends DomainError {
+  constructor(public readonly from: string, public readonly to: string) {
+    super(`Account cannot transition from '${from}' to '${to}'.`);
+  }
+}
+
 /** Raised by createExchangeRate when an Exchange Rate already exists for the same currency pair and effective date. Not explicit business-rule text in Ch.31 itself — enforced here as a direct consequence of the Database milestone's own `uq_exchange_rates_tenant_pair_effective_date_deleted_at` uniqueness constraint (06_DATABASE_STANDARDS.md SD-004), so a duplicate attempt fails with a typed Domain error instead of a raw, leaked Prisma unique-constraint violation. */
 export class DuplicateExchangeRateError extends DomainError {
   constructor(
@@ -153,5 +178,55 @@ export class DuplicateExchangeRateError extends DomainError {
     super(
       `An Exchange Rate for currency pair '${fromCurrencyUuid}' -> '${toCurrencyUuid}' effective '${effectiveDate.toISOString()}' already exists.`,
     );
+  }
+}
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Tax Group does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateTaxGroup` (Repository, on zero rows matched) and by `getTaxGroup`/`updateTaxGroup`/`createTaxRule`/`listTaxRules` (Business layer, when a referenced Tax Group cannot be resolved). */
+export class TaxGroupNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Tax Group '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createTaxGroup`/`updateTaxGroup` when a Tax Group with the same name already exists for the Company (excluding the row being updated itself). Not explicit Ch.67 business-rule text — enforced here as a direct consequence of the Database milestone's own `uq_tax_groups_tenant_company_name_deleted_at` uniqueness constraint (06_DATABASE_STANDARDS.md SD-004), so a duplicate attempt fails with a typed Domain error instead of a raw, leaked Prisma unique-constraint violation, mirroring `DuplicateExchangeRateError`'s identical reasoning. */
+export class DuplicateTaxGroupNameError extends DomainError {
+  constructor(public readonly companyUuid: string, public readonly taxGroupName: string) {
+    super(`Tax Group '${taxGroupName}' already exists for Company '${companyUuid}'.`);
+  }
+}
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Tax Rule does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Tax Rule has no update method (TXR-003 immutability), so this is thrown only by `getTaxRule`, mirroring `ExchangeRateNotFoundError`'s identical find-only usage. */
+export class TaxRuleNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Tax Rule '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createTaxRule` when the new effective date range overlaps an existing Tax Rule already registered for the same Tax Group (00_BUSINESS_RULES.md Ch.68.7 TXR-001 — "exactly one rule must be resolvable for any given transaction date"). A `null` `effectiveTo` means open-ended (still in effect). */
+export class TaxRuleOverlapError extends DomainError {
+  constructor(
+    public readonly taxGroupUuid: string,
+    public readonly effectiveFrom: Date,
+    public readonly effectiveTo: Date | null,
+  ) {
+    super(
+      `Tax Rule effective from '${effectiveFrom.toISOString()}'${effectiveTo ? ` to '${effectiveTo.toISOString()}'` : " (open-ended)"} overlaps an existing Tax Rule for Tax Group '${taxGroupUuid}'.`,
+    );
+  }
+}
+
+/** Raised by `createTaxRule` when a supplied `effectiveTo` is earlier than `effectiveFrom` — a structurally invalid range for Ch.68.7 TXR-001's "effective date range" concept. Not explicit handbook text (a documented Handbook Deviation, the minimum structural invariant a "range" implies). */
+export class InvalidTaxRuleEffectiveDateRangeError extends DomainError {
+  constructor(public readonly effectiveFrom: Date, public readonly effectiveTo: Date) {
+    super(
+      `Tax Rule effective date range is invalid: 'effectiveTo' (${effectiveTo.toISOString()}) is before 'effectiveFrom' (${effectiveFrom.toISOString()}).`,
+    );
+  }
+}
+
+/** Raised by `createTaxRule` when the supplied rate is negative (00_BUSINESS_RULES.md Ch.68.8 — "Rate must be a non-negative percentage or fixed amount as configured"). Zero is explicitly valid (Ch.67.11's "Zero Rate" Tax Group example), unlike Exchange Rate's stricter positive-only rule. */
+export class InvalidTaxRateValueError extends DomainError {
+  constructor(public readonly rate: string) {
+    super(`Tax Rule rate '${rate}' must be a non-negative percentage.`);
   }
 }
