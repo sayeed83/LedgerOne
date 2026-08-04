@@ -6,13 +6,16 @@
 // it's imported.
 import { config as loadEnv } from "dotenv";
 import { resolve } from "path";
-import express, { Express, NextFunction, Request, Response } from "express";
+import express, { Express, Request, Response } from "express";
 import helmet from "helmet";
 import cors from "cors";
 import compression from "compression";
-import pino from "pino";
 import { registerModules } from "./module-registry";
 import { pingDatabase } from "./database/client";
+import { correlationIdMiddleware } from "./common/middleware/correlation-id.middleware";
+import { loggingMiddleware } from "./common/middleware/logging.middleware";
+import { errorHandlerMiddleware } from "./common/middleware/error-handler.middleware";
+import { logger } from "./common/logging/logger.config";
 
 // The repo's single, shared `.env` lives at the monorepo root, not per-app
 // (matching scripts/db/migrate.sh's `source "$ROOT_DIR/.env"` convention) —
@@ -22,8 +25,6 @@ import { pingDatabase } from "./database/client";
 // file at all, per its own header comment (env vars are injected directly
 // by AWS Secrets Manager/ECS there).
 loadEnv({ path: resolve(__dirname, "../../../.env") });
-
-const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
 
 export function createApp(): Express {
   const app = express();
@@ -40,6 +41,8 @@ export function createApp(): Express {
   );
   app.use(compression());
   app.use(express.json());
+  app.use(correlationIdMiddleware);
+  app.use(loggingMiddleware);
 
   // 10_DEPLOYMENT_ARCHITECTURE.md HC-001–004: unauthenticated, not
   // tenant-scoped, not rate-limited, bare `{status}` body (not the
@@ -51,17 +54,12 @@ export function createApp(): Express {
 
   registerModules(app);
 
-  // Minimal safety net so an error that escapes a router doesn't crash the
-  // process or hang the request. This is NOT the centralized DomainError→
-  // HTTP mapping middleware described in 05_CODING_STANDARDS.md Ch.18.5/
-  // Ch.31.5 (that remains out of scope — an empty stub at
-  // common/middleware/error-handler.middleware.ts) — Authentication's own
-  // routes already map their DomainErrors before an error would ever reach
-  // this point (presentation/support/handle-domain-errors.ts).
-  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    logger.error({ err }, "Unhandled error");
-    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } });
-  });
+  // Centralized DomainError-escape safety net (05_CODING_STANDARDS.md
+  // Ch.18.5/Ch.31.5) — each module's own routes already map their
+  // DomainErrors before an error would ever reach this point
+  // (presentation/support/handle-domain-errors.ts, one copy per module);
+  // this only catches what escapes that.
+  app.use(errorHandlerMiddleware);
 
   return app;
 }

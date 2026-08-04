@@ -1,0 +1,166 @@
+// Authorization module — Prisma schema.
+// Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
+// Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
+// Delete). Business rules: 00_BUSINESS_RULES.md Ch.11 (Roles), Ch.12 (Permissions).
+// Architecture: 03_ARCHITECTURE.md Ch.9.5 (RBAC model), Ch.9.9 Decision 9.9.1
+// (permissions namespaced/owned per module, Authorization owns only the RBAC
+// mechanism). Table set confirmed in engineering/prompts/02_platform/00_auth.md
+// §16: `roles`, `permissions`, `role_permissions`, `user_roles`.
+//
+// Module ownership: this module owns the RBAC *mechanism* — Role definition,
+// Permission storage, Role↔Permission bundling, and User↔Role assignment. It
+// does not own individual permission definitions' business meaning (each
+// owning module declares those, published via its manifest per Decision
+// 9.9.1); this schema only stores them.
+//
+// Cross-module references (FK-002): `userUuid` on UserRole is a plain indexed
+// column with no DB-level foreign key — the canonical User row lives in User
+// Management's schema file, and cross-module FKs are forbidden regardless of
+// convenience, mirroring User Management's own `companyUuid`/`branchUuid`
+// references into Organization.
+
+/// Tenant-configurable, named collection of Permissions (00_BUSINESS_RULES.md
+/// Ch.11) assignable to one or more Users. Tenant-owned (MT-001) — Role name
+/// is unique within its Tenant (Ch.11.8).
+model Role {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Role name (00_BUSINESS_RULES.md Ch.11.8) — required, unique within the Tenant.
+  name String @db.VarChar(150) @map("name")
+  /// Free-text description of the Role's intended job function (Ch.11.3).
+  description String? @db.VarChar(500) @map("description")
+
+  /// True for LedgerOne's standard, pre-configured Roles (ROL-002, e.g. "Accountant"); false for a tenant's own custom Role.
+  isSystemRole Boolean @default(false) @map("is_system_role")
+
+  /// Role lifecycle state (00_BUSINESS_RULES.md Ch.11.5): Active, Retired — retiring a Role makes it non-assignable to new Users while existing assignments persist until reassigned.
+  status RoleStatus @default(ACTIVE) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@unique([tenantId, name, deletedAt], map: "uq_roles_tenant_name_deleted_at")
+  @@index([tenantId, status], map: "idx_roles_tenant_status")
+  @@map("roles")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.11.5 Role lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum RoleStatus {
+  ACTIVE
+  RETIRED
+
+  @@map("role_status")
+}
+
+/// Finest-grained, named unit of access control (00_BUSINESS_RULES.md Ch.12),
+/// keyed by the `module.resource.action` convention (03_ARCHITECTURE.md
+/// Ch.9.5/12.18). Platform-owned reference data (MT-005) — permissions are
+/// platform-defined capabilities declared by their owning module, not
+/// user-editable (Ch.12.5/12.8), so this table omits `created_by`/`updated_by`
+/// (06_DATABASE_STANDARDS.md §2.3's documented exception for a pure platform
+/// reference table with no per-row mutation history).
+model Permission {
+  id   BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid String @unique @db.Char(36) @map("uuid")
+
+  /// Full permission key, `module.resource.action` (e.g. `accounting.journal_entry.post`) — 03_ARCHITECTURE.md Ch.9.5/Ch.12.18.
+  permissionKey String @unique @db.VarChar(180) @map("permission_key")
+
+  /// Owning module identifier (e.g. `accounting`) — every Permission belongs to exactly one module (PRM-001).
+  moduleName String @db.VarChar(64) @map("module_name")
+  /// Business object/resource the Permission governs (e.g. `journal_entry`).
+  resource String @db.VarChar(100) @map("resource")
+
+  /// Action-type categorization (00_BUSINESS_RULES.md PRM-002): View, Create, Edit, Approve, Delete.
+  action PermissionAction @map("action")
+
+  /// Human-readable description of the capability this Permission grants.
+  description String? @db.VarChar(500) @map("description")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  rolePermissions RolePermission[]
+
+  @@index([moduleName], map: "idx_permissions_module_name")
+  @@map("permissions")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md PRM-002's action-type categorization exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum PermissionAction {
+  VIEW
+  CREATE
+  EDIT
+  APPROVE
+  DELETE
+
+  @@map("permission_action")
+}
+
+/// Bundles a Permission into a Role (00_BUSINESS_RULES.md Ch.11.3/Ch.12.10 —
+/// "Role grants Permission"). Tenant-owned (MT-001) even though reachable via
+/// Role, mirroring Organization's Branch/Department pattern of carrying
+/// `tenant_id` directly for isolation defense-in-depth. Both `roleId` and
+/// `permissionId` are in-module real FKs (Role and Permission both live in
+/// this schema file).
+model RolePermission {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  roleId BigInt @db.UnsignedBigInt @map("role_id")
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  permissionId BigInt     @db.UnsignedBigInt @map("permission_id")
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([roleId, permissionId, deletedAt], map: "uq_role_permissions_role_permission_deleted_at")
+  @@index([tenantId], map: "idx_role_permissions_tenant_id")
+  @@index([roleId], map: "idx_role_permissions_role_id")
+  @@index([permissionId], map: "idx_role_permissions_permission_id")
+  @@map("role_permissions")
+}
+
+/// Binds a User to a Role (00_BUSINESS_RULES.md Ch.10, Ch.11.10 "User assigned
+/// Role") — Role Assignment, 03_ARCHITECTURE.md Ch.9.5. Tenant-owned
+/// (MT-001). `userUuid` is a cross-module reference (FK-002) to User
+/// Management's `users.uuid` — no DB-level foreign key; `roleId` is an
+/// in-module real FK to this schema's own `Role`.
+model UserRole {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to User Management's `users.uuid` (FK-002) — no DB-level FK.
+  userUuid String @db.Char(36) @map("user_uuid")
+
+  roleId BigInt @db.UnsignedBigInt @map("role_id")
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([userUuid, roleId, deletedAt], map: "uq_user_roles_user_role_deleted_at")
+  @@index([tenantId], map: "idx_user_roles_tenant_id")
+  @@index([tenantId, userUuid], map: "idx_user_roles_tenant_user_uuid")
+  @@index([roleId], map: "idx_user_roles_role_id")
+  @@map("user_roles")
+}
