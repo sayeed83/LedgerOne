@@ -12,6 +12,16 @@
     "noEmit": true,
     "incremental": true,
     "allowJs": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@ledgerone/shared-types": ["../../packages/shared-types/src"],
+      "@ledgerone/shared-types/*": ["../../packages/shared-types/src/*"],
+      "@ledgerone/shared-utils": ["../../packages/shared-utils/src"],
+      "@ledgerone/shared-utils/*": ["../../packages/shared-utils/src/*"],
+      "@ledgerone/ui": ["../../packages/ui/src"],
+      "@ledgerone/ui/*": ["../../packages/ui/src/*"]
+    },
     "plugins": [
       {
         "name": "next"

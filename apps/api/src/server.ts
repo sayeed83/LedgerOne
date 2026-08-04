@@ -35,6 +35,7 @@ export function createApp(): Express {
         .split(",")
         .map((origin) => origin.trim())
         .filter(Boolean),
+      credentials: true, // required for the httpOnly refresh-token cookie (SESS-002) to be sent/read cross-origin
     }), // SEC-API-002 — explicit allow-list, never a wildcard
   );
   app.use(compression());
