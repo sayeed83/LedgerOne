@@ -7,10 +7,163 @@
 // Module ownership: this module owns Financial Year (the annual reporting-cycle
 // definition, Ch.5), Fiscal Period (the monthly-typical subdivision of a
 // Financial Year, Ch.6), Currency (Ch.7), Exchange Rate (Ch.31), Tax Group
-// (Ch.67), Tax Rule (Ch.68), Account Group (Ch.18), and Account (Ch.17) —
-// Database + Repository milestone for Account Group/Account. Financial
-// Closing (Ch.32) and Journal Entries (Ch.19-20) are distinct
-// entities/chapters and are explicitly not part of this schema yet.
+// (Ch.67), Tax Rule (Ch.68), Account Group (Ch.18), Account (Ch.17), Journal
+// Entry + Journal Entry Line (Ch.20 — one Aggregate per 03_ARCHITECTURE.md
+// Ch.7.3.3, single file per Ch.7.4), and Ledger Entry (Ch.19 — a second,
+// separate Aggregate; see the Journal Entry doc comment below for why the
+// two are not merged). Database-layer milestone ONLY for Journal Entry /
+// Journal Entry Line / Ledger Entry — no Repository, Business, Presentation,
+// or Integration layer exists yet for these three models. Financial Closing
+// (Ch.32) remains a distinct, not-yet-started chapter/entity.
+//
+// Journal Entries milestone — architecture inputs (frozen, not re-decided
+// here, only implemented): (1) JournalEntry + JournalEntryLine are ONE
+// Aggregate Root (Ch.7.3.3/7.3.6) — the debit=credit invariant spans both,
+// so they are modeled as two tables but one conceptual, one-file-worthy
+// domain unit; no Business-layer code exists yet to enforce that invariant
+// (this milestone only persists the shape). (2) Ledger Entry is a SEPARATE
+// Aggregate Root (Ch.19) — LDG-001 makes it a downstream effect of posting,
+// not a component of the balance invariant; per 03_ARCHITECTURE.md Ch.7.6.1
+// a use case spanning two Aggregates is two separate Aggregate saves
+// coordinated by the Business layer, never one mega-Aggregate — so
+// JournalEntry and LedgerEntry are NOT merged into one table or one
+// Aggregate despite LedgerEntry only ever being created as a side effect of
+// JournalEntry posting. (3) Each Aggregate Root gets its own Repository
+// interface at the Business layer (a later milestone) — `IAccountingRepository`
+// (the existing fat interface covering FinancialYear/FiscalPeriod/Currency/
+// Account) is NOT extended for these three models; this is a database-layer
+// note only, since no repository code is written this milestone.
+//
+// No separate "Ledger" header table is modeled: 00_BUSINESS_RULES.md
+// Ch.19.10's ERD names only `LEDGER_ENTRY` (`ACCOUNT ||--o{ LEDGER_ENTRY`,
+// `LEDGER_ENTRY }o--|| JOURNAL_ENTRY_LINE`) — no chapter ever schemas an
+// independent "Ledger" entity distinct from its entries, mirroring how
+// Chart of Accounts was never modeled as a table distinct from `Account`
+// rows. A Company's Ledger, per account, is simply its own `LedgerEntry`
+// rows (`WHERE account_id = ?`).
+//
+// Voucher (Ch.21), Voucher Type (Ch.22), and Posting Rules (Ch.23) are
+// explicitly OUT OF SCOPE this milestone — no table is modeled for any of
+// them. Ch.20.4 itself scopes Journal Entry as covering "manual and
+// system-generated Journal Entry creation and posting mechanics" while
+// treating "the specific business events that trigger automatic entries"
+// (i.e., Posting Rules) as belonging to their own future chapters/modules.
+// `JournalEntry.voucherUuid` (Ch.20.10's `JOURNAL_ENTRY }o--o| VOUCHER`) is
+// therefore NOT modeled — no Voucher table exists anywhere in the codebase
+// to reference, and inventing one now would guess at a shape no chapter of
+// this milestone's scope schemas. Flagged as a Handbook Deviation (an
+// unimplemented relationship, not a guessed one), not silently omitted.
+//
+// Cost Center (Ch.28) is explicitly NOT modeled as a column on
+// JournalEntryLine this milestone, despite Ch.20.10's ERD showing
+// `JOURNAL_ENTRY_LINE }o--o| COST_CENTER : "optionally attributed to"` — no
+// `CostCenter` table exists anywhere in the codebase (Ch.28 has no
+// Database/Repository milestone of its own yet), and CCT-001/002 make the
+// attribute genuinely optional with zero effect on the balance invariant, so
+// omitting it does not violate DBL-001/002. Adding either a real FK to a
+// nonexistent table or a same-milestone `CostCenter` table (well outside
+// this milestone's explicit scope: "Journal Entry Aggregate, Journal Entry
+// Line, Ledger Aggregate, Ledger Entry") would both be invention. Flagged as
+// a Handbook Deviation to be resolved once Cost Centers has its own
+// Database milestone, not guessed.
+//
+// Approval Workflow (Ch.13) has no table of its own anywhere in the
+// codebase. JRN-004's above-threshold approval routing is represented ONLY
+// via `JournalEntryStatus.PENDING_APPROVAL` on the state machine itself
+// (Ch.20.5's literal 4-state diagram: Draft/PendingApproval/Posted/
+// Reversed — "Rejected" is a transition back to Draft, not a fifth stored
+// state) — no `ApprovalWorkflow`/`ApprovalStep` table is modeled, since
+// building one is well outside this milestone's explicit scope and no
+// chapter of Ch.13 is being implemented here. The actual routing/threshold
+// decision is a future Business-layer concern.
+//
+// Multi-Currency (Ch.30) fields are explicitly NOT modeled on JournalEntry/
+// JournalEntryLine this milestone: Ch.30.5 scopes Multi-Currency as "a
+// capability applied to transactions (Vouchers, Invoices)" — Ch.30.6's
+// workflow has the foreign-currency amount captured and converted upstream
+// of posting, with the Journal Entry itself posted "in Base Currency, with
+// foreign-currency amount retained for reference" (MCR-001) by whatever
+// upstream transaction (Voucher/Invoice) generated it. Since Voucher/Invoice
+// do not exist in this codebase yet and this milestone is manual,
+// direct-entry Journal Entries only (Ch.20.4's in-scope path), there is no
+// concrete upstream transaction shape to model a `currencyId`/
+// `foreignAmount` pairing against without guessing one. Flagged as a
+// Handbook Deviation / genuine gap to resolve when Voucher or a
+// multi-currency-capable transaction module is built, not guessed — amounts
+// below are modeled purely in the posting/Base Currency, consistent with
+// every worked manual-entry example in Ch.20.11/32.12.
+//
+// `journalEntryLines.debitAmount`/`creditAmount` (rather than a single
+// `amount` + `entryType` discriminator) directly follows the frozen,
+// literal worked diagram in 03_ARCHITECTURE.md Ch.7.3.6: `JournalEntryLine
+// <<Entity>>` with `-debit: Money`, `-credit: Money` as two distinct fields
+// — not re-decided here, only implemented as two `DECIMAL` columns since no
+// Prisma `Money` composite type exists. `DECIMAL(20,4)`: no handbook or
+// architecture chapter specifies a monetary-amount precision/scale
+// (Currency.decimalPrecision, Ch.7.3/CUR-003, is a per-currency *display/
+// rounding* convention applied at the Business layer, not a DB column
+// width); flagged as an inline Decision (06_DATABASE_STANDARDS.md §1.7
+// pattern), mirroring ExchangeRate.rate's own documented DECIMAL(20,10)
+// deviation — 4 fractional digits covers every currency precision seen in
+// this schema so far (0-4), 20 total digits leaves headroom consistent with
+// ExchangeRate's own width choice, without inventing a currency-specific
+// variable-scale column MySQL/Prisma cannot express per-row anyway. Exactly
+// one of `debitAmount`/`creditAmount` being positive (and the other zero)
+// per line, and DBL-001's cross-line balance invariant, are both
+// Domain/Business-layer concerns (the `JournalEntry` Aggregate's own
+// `assertBalanced()`, per 03_ARCHITECTURE.md Ch.7.3.6) — not expressible as
+// a MySQL/Prisma declarative constraint, and not implemented at this
+// Database-only milestone, consistent with every other cross-row/
+// cross-field invariant this module has already deferred (FY-002 overlap,
+// AGP-002/003 type-consistency, TXR-001 overlap).
+//
+// `journalEntries.postingDate` is stored; `fiscalPeriodId` is deliberately
+// NOT stored as its own column. Ch.20.3's "Owns:... its posting date (which
+// determines its Fiscal Period, Ch.6)" phrases Fiscal Period as *derived*
+// from posting date, not as an independently owned attribute — mirroring
+// how `Account.accountType`'s normal balance is derived from `accountType`
+// rather than stored a second time. JRN-002's "posting date must fall
+// within an Open Fiscal Period" lookup/validation is a Business-layer
+// concern for a later milestone (there is no FiscalPeriod-open-check
+// mechanism implemented anywhere yet either — FiscalPeriod itself is
+// Database-milestone only).
+//
+// `journalEntries.narration` is a nullable free-text field NOT explicitly
+// named in Ch.20.3's "Owns:" list (which lists only lines, status, and
+// posting date) — flagged as a Handbook Deviation, not silently invented as
+// a business rule: Ch.20.11's own worked example ("a manual adjusting entry
+// to record accrued interest expense...") and Ch.21.3's sibling Voucher
+// concept ("narration") both presuppose a free-text description exists for
+// a manually created entry; omitting it would make manual entry (Ch.20.4's
+// explicitly in-scope path) unusable without inventing a workaround
+// elsewhere. Nullable, since no rule makes it mandatory.
+//
+// `journalEntries.reversalOfJournalEntryId` (self-referential, nullable,
+// in-module RESTRICT FK) implements JRN-003's "correction requires a
+// Reversing Entry (a new Journal Entry with debits/credits exactly
+// inverted) referencing the original" — the referencing relationship JRN-003
+// requires, not present in Ch.20.10's ERD (which predates the reversal rule
+// being modeled as a self-reference) but required by the literal rule text;
+// decided inline rather than omitted, since JRN-003 has no other entity to
+// carry this reference.
+//
+// `ledgerEntries` carries NO `deletedAt`: LDG-002's "immutable once
+// created... never edited or deleted" is stronger than every other soft-
+// delete rule in this module (which permit soft delete, just never hard
+// delete) — Ledger Entry rows are never deleted at all, soft or hard. This
+// is a documented standard-columns omission (06_DATABASE_STANDARDS.md
+// §2.3's "table omitting any of these requires a Decision record").
+// `ledgerEntries` also omits `updatedAt`/`updatedBy`: an append-only row
+// that is genuinely never mutated after creation (LDG-002) has no
+// meaningful "last updated" fact distinct from its creation fact — a second
+// documented standard-columns omission, distinct in rationale from
+// Currency's platform-ownership exception. `createdBy` is retained
+// (nullable, per the existing pattern) since Ch.19.18 attributes creation to
+// "the Journal Entry posting process" — a real, if system-driven, actor.
+// `ledgerEntries.journalEntryLineId` is `@unique`: Ch.19.10's
+// `LEDGER_ENTRY }o--|| JOURNAL_ENTRY_LINE : "derived from"` cardinality
+// (`||` on the Journal Entry Line side) is one-to-one — each Journal Entry
+// Line produces exactly one Ledger Entry.
 //
 // Chart of Accounts (Ch.17): NO separate `ChartOfAccounts` table is modeled.
 // Ch.17.10's `COMPANY ||--|| CHART_OF_ACCOUNTS : "owns one"` describes a
@@ -526,6 +679,11 @@ model Account {
   updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
   deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
 
+  /// Inverse side of JournalEntryLine.account (Ch.20.10 `JOURNAL_ENTRY_LINE }o--|| ACCOUNT`) — added with the Journal Entries Database milestone.
+  journalEntryLines JournalEntryLine[]
+  /// Inverse side of LedgerEntry.account (Ch.19.10 `ACCOUNT ||--o{ LEDGER_ENTRY`) — added with the Journal Entries Database milestone.
+  ledgerEntries LedgerEntry[]
+
   /// Never-reuse per Company (Ch.17.7 COA-004) — deliberately no `deletedAt` in this composite, unlike every other unique constraint in this module.
   @@unique([tenantId, companyUuid, code], map: "uq_accounts_tenant_company_code")
   @@index([tenantId, companyUuid, status], map: "idx_accounts_tenant_company_status")
@@ -533,4 +691,164 @@ model Account {
   @@index([accountGroupId], map: "idx_accounts_account_group_id")
   @@index([parentAccountId], map: "idx_accounts_parent_account_id")
   @@map("accounts")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.20.5 Journal Entry lifecycle exactly
+/// (05_CODING_STANDARDS.md Ch.26.4): Draft (created, editable) ->
+/// PendingApproval (submitted, above threshold, JRN-004) -> Posted
+/// (approved, or posted directly if below threshold) -> Reversed (a
+/// reversing entry created and posted). "Rejected" (Ch.13.5/Ch.20.5) is a
+/// transition back to DRAFT, not a fifth stored state.
+enum JournalEntryStatus {
+  DRAFT
+  PENDING_APPROVAL
+  POSTED
+  REVERSED
+
+  @@map("journal_entry_status")
+}
+
+/// The formal record of a single financial transaction (00_BUSINESS_RULES.md
+/// Ch.20.1) — the Aggregate Root of the JournalEntry+JournalEntryLine
+/// Aggregate (03_ARCHITECTURE.md Ch.7.3.3/7.3.6; see file header for the
+/// full architecture rationale, frozen prior to this milestone). Tenant-owned
+/// (MT-001) and carries `companyUuid` directly (cross-module reference,
+/// FK-002, no DB-level FK), mirroring every other Company-scoped table in
+/// this module. Database-layer milestone ONLY — no Repository/Business/
+/// Presentation layer exists yet; DBL-001/002 (balance), JRN-002 (Fiscal
+/// Period open-check), JRN-003 (posted immutability), and JRN-004 (approval
+/// threshold routing) are all Business/Domain-layer concerns not enforced
+/// here. See file header for: `postingDate` vs. `fiscalPeriodId`,
+/// `narration`, `reversalOfJournalEntryId`, and the explicit exclusions
+/// (Voucher, Cost Center, Approval Workflow, Multi-Currency).
+model JournalEntry {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// The date this entry is posted against (00_BUSINESS_RULES.md Ch.20.3) — determines its Fiscal Period (Ch.6) by lookup, not by a stored FK; see file header.
+  postingDate DateTime @db.DateTime(3) @map("posting_date")
+
+  /// Free-text description of the transaction (see file header — not literal Ch.20.3 text, a documented Handbook Deviation necessary for manual entry, Ch.20.4/20.11).
+  narration String? @db.VarChar(500) @map("narration")
+
+  /// Journal Entry lifecycle (00_BUSINESS_RULES.md Ch.20.5): Draft/PendingApproval/Posted/Reversed.
+  status JournalEntryStatus @default(DRAFT) @map("status")
+
+  /// Self-referential reference to the original entry this one reverses (Ch.20.7 JRN-003) — null unless this entry IS a reversing entry. See file header.
+  reversalOfJournalEntryId BigInt?       @db.UnsignedBigInt @map("reversal_of_journal_entry_id")
+  reversalOfJournalEntry   JournalEntry? @relation("JournalEntryReversal", fields: [reversalOfJournalEntryId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  reversingJournalEntries  JournalEntry[] @relation("JournalEntryReversal")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  lines JournalEntryLine[]
+
+  @@index([tenantId, companyUuid, status], map: "idx_journal_entries_tenant_company_status")
+  @@index([companyUuid], map: "idx_journal_entries_company_uuid")
+  @@index([tenantId, companyUuid, postingDate], map: "idx_journal_entries_tenant_company_posting_date")
+  @@index([reversalOfJournalEntryId], map: "idx_journal_entries_reversal_of_journal_entry_id")
+  @@map("journal_entries")
+}
+
+/// A single debit or credit line within a Journal Entry
+/// (00_BUSINESS_RULES.md Ch.20.3/20.10) — a child Entity of the
+/// JournalEntry Aggregate Root, never an independent Aggregate
+/// (03_ARCHITECTURE.md Ch.7.14's explicit warning against modeling lines as
+/// independent Aggregates). Tenant-owned (MT-001), carries `companyUuid`
+/// directly mirroring its parent, and carries `journalEntryId` as a real,
+/// in-module RESTRICT FK (FK-001/FK-003/FK-004 — both models live in this
+/// same schema file). `accountId` is likewise a real, in-module RESTRICT FK
+/// to this schema's own `Account` (Ch.20.10's `JOURNAL_ENTRY_LINE }o--||
+/// ACCOUNT`). Database-layer milestone ONLY — see file header for
+/// `debitAmount`/`creditAmount` precision rationale, the Cost Center
+/// exclusion, and why the balance invariant is not enforced at this layer.
+model JournalEntryLine {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  journalEntryId BigInt       @db.UnsignedBigInt @map("journal_entry_id")
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  accountId BigInt  @db.UnsignedBigInt @map("account_id")
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Debit amount for this line (00_BUSINESS_RULES.md Ch.16 DBL-003; 03_ARCHITECTURE.md Ch.7.3.6 `-debit: Money`) — see file header for DECIMAL(20,4) rationale. Zero when this line is a credit.
+  debitAmount Decimal @default(0) @db.Decimal(20, 4) @map("debit_amount")
+  /// Credit amount for this line (Ch.16 DBL-003; Ch.7.3.6 `-credit: Money`) — see file header. Zero when this line is a debit.
+  creditAmount Decimal @default(0) @db.Decimal(20, 4) @map("credit_amount")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  ledgerEntry LedgerEntry?
+
+  @@index([tenantId, companyUuid], map: "idx_journal_entry_lines_tenant_company")
+  @@index([companyUuid], map: "idx_journal_entry_lines_company_uuid")
+  @@index([journalEntryId], map: "idx_journal_entry_lines_journal_entry_id")
+  @@index([accountId], map: "idx_journal_entry_lines_account_id")
+  @@map("journal_entry_lines")
+}
+
+/// The complete, chronological record of posted transactions affecting a
+/// specific Account (00_BUSINESS_RULES.md Ch.19.1) — a SEPARATE Aggregate
+/// Root from JournalEntry (see file header for the architecture rationale).
+/// No independent "Ledger" header table exists (see file header) — this
+/// table alone is the Ledger. Tenant-owned (MT-001), carries `companyUuid`
+/// directly mirroring every other table in this module. `accountId` and
+/// `journalEntryLineId` are real, in-module RESTRICT FKs (both referenced
+/// models live in this same schema file); `journalEntryLineId` is `@unique`
+/// per Ch.19.10's one-to-one "derived from" cardinality (see file header).
+/// Database-layer milestone ONLY — LDG-001 (created only from a Posted
+/// line) and LDG-003 (running balance invariant) are Business-layer
+/// concerns; no `runningBalance` column is stored (see file header —
+/// derived by summation, not persisted, avoiding a value that could drift
+/// from the very entries LDG-003 says it must equal). No `deletedAt`/
+/// `updatedAt`/`updatedBy` — see file header for the LDG-002 immutability
+/// rationale.
+model LedgerEntry {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  accountId BigInt  @db.UnsignedBigInt @map("account_id")
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// The Posted Journal Entry Line this entry is derived from (Ch.19.7 LDG-001, Ch.19.10 "derived from") — one-to-one, see model doc comment.
+  journalEntryLineId BigInt           @unique @db.UnsignedBigInt @map("journal_entry_line_id")
+  journalEntryLine   JournalEntryLine @relation(fields: [journalEntryLineId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Debit amount, mirrored from the source Journal Entry Line at the moment of posting (Ch.19.3) — denormalized so per-account history/balance summation (Ch.19.6) never needs to join back to `journal_entry_lines`.
+  debitAmount Decimal @default(0) @db.Decimal(20, 4) @map("debit_amount")
+  /// Credit amount, mirrored from the source Journal Entry Line (Ch.19.3) — see above.
+  creditAmount Decimal @default(0) @db.Decimal(20, 4) @map("credit_amount")
+
+  /// The originating Journal Entry's posting date (Ch.20.3), denormalized for chronological per-account ordering (Ch.19.1/19.6) without joining back to `journal_entries`.
+  entryDate DateTime @db.DateTime(3) @map("entry_date")
+
+  createdAt DateTime @default(now()) @db.DateTime(3) @map("created_at")
+  /// Nullable: attributed to "the Journal Entry posting process" (Ch.19.18), which may run as a system-triggered step, not always a direct human action.
+  createdBy BigInt? @db.UnsignedBigInt @map("created_by")
+
+  @@index([tenantId, companyUuid, accountId, entryDate], map: "idx_ledger_entries_tenant_company_account_entry_date")
+  @@index([companyUuid], map: "idx_ledger_entries_company_uuid")
+  @@index([accountId], map: "idx_ledger_entries_account_id")
+  @@map("ledger_entries")
 }

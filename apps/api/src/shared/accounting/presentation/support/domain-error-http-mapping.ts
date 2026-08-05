@@ -40,6 +40,19 @@ import {
   InvalidAccountStatusTransitionError,
   AccountTypeMismatchError,
   DuplicateAccountCodeError,
+  JournalEntryNotFoundError,
+  InvalidJournalEntryStatusTransitionError,
+  JournalEntryLineNotFoundError,
+  LedgerEntryNotFoundError,
+  DuplicateLedgerEntryForJournalEntryLineError,
+  JournalEntryMinimumLinesError,
+  JournalEntryMinimumDistinctAccountsError,
+  InvalidJournalEntryLineAmountError,
+  JournalEntryNotBalancedError,
+  AccountNotActiveError,
+  AccountNotPostableError,
+  JournalEntryNotEditableError,
+  NoFiscalPeriodForPostingDateError,
 } from "../../business/accounting-errors";
 
 export interface HttpErrorMapping {
@@ -143,6 +156,45 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof DuplicateAccountCodeError) {
     return { status: 409, code: "ACC_DUPLICATE_ACCOUNT_CODE" };
+  }
+  if (error instanceof JournalEntryNotFoundError) {
+    return { status: 404, code: "ACC_JOURNAL_ENTRY_NOT_FOUND" };
+  }
+  if (error instanceof InvalidJournalEntryStatusTransitionError) {
+    return { status: 409, code: "ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION" };
+  }
+  if (error instanceof JournalEntryLineNotFoundError) {
+    return { status: 404, code: "ACC_JOURNAL_ENTRY_LINE_NOT_FOUND" };
+  }
+  if (error instanceof LedgerEntryNotFoundError) {
+    return { status: 404, code: "ACC_LEDGER_ENTRY_NOT_FOUND" };
+  }
+  if (error instanceof DuplicateLedgerEntryForJournalEntryLineError) {
+    return { status: 409, code: "ACC_DUPLICATE_LEDGER_ENTRY_FOR_LINE" };
+  }
+  if (error instanceof JournalEntryMinimumLinesError) {
+    return { status: 422, code: "ACC_JOURNAL_ENTRY_MINIMUM_LINES" };
+  }
+  if (error instanceof JournalEntryMinimumDistinctAccountsError) {
+    return { status: 422, code: "ACC_JOURNAL_ENTRY_MINIMUM_DISTINCT_ACCOUNTS" };
+  }
+  if (error instanceof InvalidJournalEntryLineAmountError) {
+    return { status: 422, code: "ACC_INVALID_JOURNAL_ENTRY_LINE_AMOUNT" };
+  }
+  if (error instanceof JournalEntryNotBalancedError) {
+    return { status: 422, code: "ACC_JOURNAL_ENTRY_NOT_BALANCED" };
+  }
+  if (error instanceof AccountNotActiveError) {
+    return { status: 403, code: "ACC_ACCOUNT_NOT_ACTIVE" };
+  }
+  if (error instanceof AccountNotPostableError) {
+    return { status: 422, code: "ACC_ACCOUNT_NOT_POSTABLE" };
+  }
+  if (error instanceof JournalEntryNotEditableError) {
+    return { status: 409, code: "ACC_JOURNAL_ENTRY_NOT_EDITABLE" };
+  }
+  if (error instanceof NoFiscalPeriodForPostingDateError) {
+    return { status: 422, code: "ACC_NO_FISCAL_PERIOD_FOR_POSTING_DATE" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

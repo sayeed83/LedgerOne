@@ -3,11 +3,27 @@
 // depends on. No DI container (Ch.10.5); plain manual construction. Not
 // used by unit tests, which build their own fake `deps` (Ch.10.6) — this
 // file is for the future Presentation layer to import.
+//
+// `journalEntryRepository`/`ledgerRepository` are wired as separate
+// dependencies from `repository` (the existing `IAccountingRepository`),
+// per the frozen architecture decision that JournalEntry and LedgerEntry
+// are separate Aggregate Roots with their own Repository interfaces — no
+// Business-layer service exists yet to consume them (that is explicitly a
+// later milestone; this wiring is Repository-layer "composition support"
+// only).
 import { PrismaAccountingRepository } from "../repository/accounting.repository";
+import { PrismaJournalEntryRepository } from "../repository/journal-entry.repository";
+import { PrismaLedgerRepository } from "../repository/ledger.repository";
+import { PrismaTransactionRunner } from "../repository/prisma-transaction-runner";
+import { SystemClock } from "./system-clock";
 
 export function createAccountingDependencies() {
   return {
     repository: new PrismaAccountingRepository(),
+    journalEntryRepository: new PrismaJournalEntryRepository(),
+    ledgerRepository: new PrismaLedgerRepository(),
+    transactionRunner: new PrismaTransactionRunner(),
+    clock: new SystemClock(),
   };
 }
 

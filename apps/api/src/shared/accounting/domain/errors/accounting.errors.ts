@@ -157,6 +157,103 @@ export class AccountNotFoundError extends DomainError {
   }
 }
 
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Journal Entry does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateJournalEntry`/`submitJournalEntryForApproval`/`postJournalEntry`/`rejectJournalEntry`/`markJournalEntryReversed` on zero rows matched (`updateMany`+refetch pattern). */
+export class JournalEntryNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Journal Entry '${identifier}' was not found.`);
+  }
+}
+
+/**
+ * Raised when a requested status change does not follow the Journal Entry
+ * lifecycle state machine (00_BUSINESS_RULES.md Ch.20.5): Draft ->
+ * PendingApproval -> Posted -> Reversed, with PendingApproval -> Draft
+ * (Rejected) and Draft -> Posted (below threshold) also valid. Every other
+ * transition is invalid.
+ */
+export class InvalidJournalEntryStatusTransitionError extends DomainError {
+  constructor(public readonly from: string, public readonly to: string) {
+    super(`Journal Entry cannot transition from '${from}' to '${to}'.`);
+  }
+}
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Journal Entry Line does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `removeJournalEntryLine` on zero rows matched (`updateMany`+refetch pattern). */
+export class JournalEntryLineNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Journal Entry Line '${identifier}' was not found.`);
+  }
+}
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Ledger Entry does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Ledger Entry has no update/remove method (LDG-002 immutability), so this is thrown only by `findLedgerEntryByUuid`'s callers, mirroring `ExchangeRateNotFoundError`'s identical find-only usage. */
+export class LedgerEntryNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Ledger Entry '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `appendLedgerEntry` when a Ledger Entry already exists for the given Journal Entry Line (00_BUSINESS_RULES.md Ch.19.10's one-to-one "derived from" cardinality) — enforced here as a direct consequence of the Database milestone's own `ledger_entries_journal_entry_line_id_key` uniqueness constraint, so a duplicate append fails with a typed Domain error instead of a raw, leaked Prisma unique-constraint violation, mirroring `DuplicateExchangeRateError`'s identical reasoning. */
+export class DuplicateLedgerEntryForJournalEntryLineError extends DomainError {
+  constructor(public readonly journalEntryLineId: bigint) {
+    super(`A Ledger Entry already exists for Journal Entry Line '${journalEntryLineId.toString()}'.`);
+  }
+}
+
+/** Raised by `createJournalEntry`/`validateJournalEntryPostable` when a Journal Entry has fewer than two lines (00_BUSINESS_RULES.md Ch.16 DBL-002 — "a single-account entry is never valid, since it cannot represent a real economic exchange"). */
+export class JournalEntryMinimumLinesError extends DomainError {
+  constructor(public readonly lineCount: number) {
+    super(`A Journal Entry must have at least two lines (found ${lineCount}).`);
+  }
+}
+
+/** Raised by `createJournalEntry`/`validateJournalEntryPostable` when a Journal Entry's lines reference fewer than two distinct Accounts (00_BUSINESS_RULES.md Ch.16 DBL-002 — "must affect at least two distinct accounts"). */
+export class JournalEntryMinimumDistinctAccountsError extends DomainError {
+  constructor(public readonly distinctAccountCount: number) {
+    super(`A Journal Entry must affect at least two distinct accounts (found ${distinctAccountCount}).`);
+  }
+}
+
+/** Raised by `createJournalEntry` when a single line's debit/credit amounts do not represent exactly one side of the entry — both positive, or both zero (00_BUSINESS_RULES.md Ch.16 DBL-003/03_ARCHITECTURE.md Ch.7.3.6's `-debit: Money`/`-credit: Money` line shape — a line is a debit OR a credit, never both, never neither). */
+export class InvalidJournalEntryLineAmountError extends DomainError {
+  constructor(public readonly debitAmount: string, public readonly creditAmount: string) {
+    super(`Journal Entry line must have exactly one positive amount (debit='${debitAmount}', credit='${creditAmount}').`);
+  }
+}
+
+/** Raised by `validateJournalEntryBalanced`/`validateJournalEntryPostable` when a Journal Entry's total debits do not exactly equal its total credits (00_BUSINESS_RULES.md Ch.16 DBL-001 — "zero business exception"). */
+export class JournalEntryNotBalancedError extends DomainError {
+  constructor(public readonly totalDebit: string, public readonly totalCredit: string) {
+    super(`Journal Entry is not balanced: total debit '${totalDebit}' does not equal total credit '${totalCredit}'.`);
+  }
+}
+
+/** Raised by `validatePostingAccount` when the referenced Account is not Active (00_BUSINESS_RULES.md Ch.20.8 — "every line must reference an Active account"). */
+export class AccountNotActiveError extends DomainError {
+  constructor(public readonly accountUuid: string, public readonly status: string) {
+    super(`Account '${accountUuid}' is not Active (current status: '${status}').`);
+  }
+}
+
+/** Raised by `validatePostingAccount` when the referenced Account is a Summary Account (`isPostingAccount = false`) — the frozen architectural decision that only Posting Accounts may receive Journal Entry postings (accounting.prisma's `Account` model doc comment). */
+export class AccountNotPostableError extends DomainError {
+  constructor(public readonly accountUuid: string) {
+    super(`Account '${accountUuid}' is a Summary Account and cannot receive Journal Entry postings.`);
+  }
+}
+
+/** Raised by `updateJournalEntry` when the target Journal Entry is not Draft (00_BUSINESS_RULES.md Ch.20.5/JRN-003 — only a Draft entry is editable; a Posted entry's correction path is a Reversing Entry, never a direct edit). */
+export class JournalEntryNotEditableError extends DomainError {
+  constructor(public readonly journalEntryUuid: string, public readonly status: string) {
+    super(`Journal Entry '${journalEntryUuid}' is not editable (current status: '${status}'); only a Draft entry may be revised.`);
+  }
+}
+
+/** Raised by `validateJournalEntryPostable` when no Fiscal Period's date range contains the Journal Entry's posting date (00_BUSINESS_RULES.md Ch.20.7 JRN-002 — a posting date must fall within a Fiscal Period at all, before that period's Open/Closed status can even be checked). */
+export class NoFiscalPeriodForPostingDateError extends DomainError {
+  constructor(public readonly companyUuid: string, public readonly postingDate: Date) {
+    super(`No Fiscal Period covers posting date '${postingDate.toISOString()}' for Company '${companyUuid}'.`);
+  }
+}
+
 /**
  * Raised when a requested status change does not follow the Account
  * lifecycle state machine (00_BUSINESS_RULES.md Ch.17.5): Draft/Inactive →

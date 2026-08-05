@@ -9,4 +9,5 @@ export { FiscalPeriodStatus } from "../domain/enums/fiscal-period-status.enum";
 export { CurrencyStatus } from "../domain/enums/currency-status.enum";
 export { AccountType } from "../domain/enums/account-type.enum";
 export { AccountStatus } from "../domain/enums/account-status.enum";
+export { JournalEntryStatus } from "../domain/enums/journal-entry-status.enum";
 export { DecimalValue } from "../domain/value-objects/decimal-value.value-object";

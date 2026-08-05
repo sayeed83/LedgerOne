@@ -1,0 +1,1234 @@
+{
+  "info": {
+    "_postman_id": "c4d5e6f7-8a9b-4c0d-9e2f-3a4b5c6d7e8f",
+    "name": "LedgerOne - Accounting (Journal Entries)",
+    "description": "Journal Entries submodule API collection (Create, Get, List, Update, Submit, Reject, Post, Reverse). Reflects the implementation exactly as shipped in apps/api/src/shared/accounting. Does not modify or duplicate FinancialYear/FiscalPeriod/ChartOfAccounts.postman_collection.json — this collection creates its own Account Group/Account/Financial Year/Fiscal Period fixtures as setup steps.\n\nDesign note (JWT required): same convention as every other collection in this folder — every protected request carries `Authorization: Bearer {{accessToken}}`, the same long-lived (10-year) RS256 dev-only token for tenantId 900001 already used by FinancialYear/FiscalPeriod/ChartOfAccounts/Currency/Tax.\n\nDesign note (no X-Tenant-Id validation-failure case): identical reasoning to every other collection here — current-tenant.middleware.ts derives `req.tenantId` from the verified JWT claim and overwrites `X-Tenant-Id` in place server-side, so this collection's `X-Tenant-Id: {{tenantId}}` header is inert structural consistency, not a real validation path.\n\nDesign note (Ledger has no endpoints): 00_BUSINESS_RULES.md Ch.19.18 — 'Only the Journal Entry posting process may create Ledger entries — no direct, manual creation or editing... is permitted through any interface.' This collection therefore never calls a `/ledger-*` path (none exists); Ledger Entry creation is verified indirectly, by inspecting the database directly outside Postman (see the milestone's own verification notes), not asserted here.\n\nDesign note (two Financial Year/Fiscal Period fixture families): the primary fixture (`{{jeYear}}`, a random far-future year, base 6000, distinct from every other collection's own base/modulus so runs never collide) is used for ordinary Create/Get/List/Update/Submit/Reject/Post/first-half testing. A SECOND fixture family covers the REAL current date (computed once per run from `new Date()`) because `reverseJournalEntry`'s reversing entry always posts at 'now' (domain/interfaces/clock.interface.ts's own documented decision) — reversal would otherwise fail with ACC_NO_FISCAL_PERIOD_FOR_POSTING_DATE against a fixture dated centuries in the future. TWO MORE fixture families (`{{closedFyYear}}`, `{{closedFpYear}}`) exist purely to construct a Closed Financial Year and a Closed Fiscal Period respectively, for the two 403 tests that need them.\n\nDesign note (balance NOT checked at creation): create-journal-entry.service.ts deliberately defers DBL-001 balance checking to posting time (Ch.16.6's workflow diagram gates POSTING, not Draft creation) — 'Create Journal Entry - Success (Unbalanced, Allowed As Draft)' below is not a bug demonstration, it is asserting this documented, intentional behavior; the corresponding rejection is exercised at posting time instead ('Post Journal Entry - Unbalanced (422)').\n\nDesign note (`.min(2)` at the DTO layer): create-journal-entry.dto.ts's Zod schema already rejects a `lines` array shorter than 2 before the request ever reaches the Business layer — 'Create Journal Entry - Validation Error (Fewer Than Two Lines)' below therefore returns `VALIDATION_ERROR` (Zod), not `ACC_JOURNAL_ENTRY_MINIMUM_LINES` (the deeper Business-layer error, which exists as defense-in-depth for any future direct Business-layer caller and is exercised by this module's own Jest unit tests, not reachable through this HTTP boundary).\n\nKnown gap: List is unpaginated, same flagged Repository-layer limitation as every other list endpoint in this module. A second known gap, discovered while building this collection: `reverseJournalEntry` is not fully transactional end-to-end (create-reversal, post-reversal, mark-original-reversed are three sequential Business-layer calls) — if the post step fails (e.g. no covering Open Fiscal Period for 'now'), the freshly-created reversing Journal Entry is left behind in Draft status, orphaned. Both gaps are pre-existing, documented Business-layer milestone risks, not introduced by this collection.\n\nRun order for a full pass, top to bottom: every 'Setup' request must run first, in order, to seed fixture variables; every non-setup request chains off the uuids those setup requests save.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" },
+    { "key": "tenantId", "value": "900001", "type": "string" },
+    { "key": "companyUuid", "value": "11111111-1111-1111-1111-111111111111", "type": "string" },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    { "key": "jeYear", "value": "", "type": "string" },
+    { "key": "closedFyYear", "value": "", "type": "string" },
+    { "key": "closedFpYear", "value": "", "type": "string" },
+    { "key": "currentFyStart", "value": "", "type": "string" },
+    { "key": "currentFyEnd", "value": "", "type": "string" },
+    { "key": "currentFpStart", "value": "", "type": "string" },
+    { "key": "currentFpEnd", "value": "", "type": "string" },
+    { "key": "assetAccountGroupUuid", "value": "", "type": "string" },
+    { "key": "revenueAccountGroupUuid", "value": "", "type": "string" },
+    { "key": "cashAccountUuid", "value": "", "type": "string" },
+    { "key": "revenueAccountUuid", "value": "", "type": "string" },
+    { "key": "inactiveAccountUuid", "value": "", "type": "string" },
+    { "key": "summaryAccountUuid", "value": "", "type": "string" },
+    { "key": "financialYearUuid", "value": "", "type": "string" },
+    { "key": "fiscalPeriodUuid", "value": "", "type": "string" },
+    { "key": "currentFinancialYearUuid", "value": "", "type": "string" },
+    { "key": "currentFiscalPeriodUuid", "value": "", "type": "string" },
+    { "key": "closedFyFinancialYearUuid", "value": "", "type": "string" },
+    { "key": "closedFyFiscalPeriodUuid", "value": "", "type": "string" },
+    { "key": "forClosedFpFinancialYearUuid", "value": "", "type": "string" },
+    { "key": "forClosedFpFiscalPeriodUuid", "value": "", "type": "string" },
+    { "key": "journalEntryUuid", "value": "", "type": "string" },
+    { "key": "unbalancedJournalEntryUuid", "value": "", "type": "string" },
+    { "key": "reversingJournalEntryUuid", "value": "", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request). Four",
+          "// distinct base/modulus pairs, none overlapping FinancialYear's own",
+          "// (base 2030) or FiscalPeriod's own (base 3000) formulas, since all",
+          "// three write into the same financial_years table under the same",
+          "// companyUuid.",
+          "if (!pm.collectionVariables.get(\"jeYear\")) {",
+          "    const jeYear = 6000 + (Date.now() % 500);",
+          "    pm.collectionVariables.set(\"jeYear\", String(jeYear));",
+          "",
+          "    const closedFyYear = 6600 + (Date.now() % 500);",
+          "    pm.collectionVariables.set(\"closedFyYear\", String(closedFyYear));",
+          "",
+          "    const closedFpYear = 7200 + (Date.now() % 500);",
+          "    pm.collectionVariables.set(\"closedFpYear\", String(closedFpYear));",
+          "",
+          "    // Reversal always posts at real 'now' (domain/interfaces/clock.interface.ts)",
+          "    // so its covering Financial Year/Fiscal Period must cover the REAL",
+          "    // current date, not a computed fixture year.",
+          "    const now = new Date();",
+          "    const pad = (n) => String(n).padStart(2, \"0\");",
+          "    const currentYear = now.getUTCFullYear();",
+          "    const month = pad(now.getUTCMonth() + 1);",
+          "    pm.collectionVariables.set(\"currentFyStart\", `${currentYear}-01-01`);",
+          "    pm.collectionVariables.set(\"currentFyEnd\", `${currentYear}-12-31`);",
+          "    pm.collectionVariables.set(\"currentFpStart\", `${currentYear}-${month}-01`);",
+          "    pm.collectionVariables.set(\"currentFpEnd\", `${currentYear}-${month}-28`);",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "Create Asset Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/account-groups", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "account-groups"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"JE Assets {{jeYear}}\",\n  \"accountType\": \"ASSET\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"assetAccountGroupUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Create Cash Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/accounts", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "accounts"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"code\": \"JE-1000-{{jeYear}}\",\n  \"name\": \"JE Cash\",\n  \"accountType\": \"ASSET\",\n  \"accountGroupUuid\": \"{{assetAccountGroupUuid}}\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"cashAccountUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Activate Cash Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{cashAccountUuid}}/activate", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "accounts", "{{cashAccountUuid}}", "activate"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Status is ACTIVE\", function () { pm.expect(pm.response.json().data.status).to.eql(\"ACTIVE\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Revenue Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/account-groups", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "account-groups"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"JE Revenue {{jeYear}}\",\n  \"accountType\": \"REVENUE\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"revenueAccountGroupUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Create Revenue Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/accounts", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "accounts"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"code\": \"JE-4000-{{jeYear}}\",\n  \"name\": \"JE Revenue\",\n  \"accountType\": \"REVENUE\",\n  \"accountGroupUuid\": \"{{revenueAccountGroupUuid}}\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"revenueAccountUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Activate Revenue Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{revenueAccountUuid}}/activate", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "accounts", "{{revenueAccountUuid}}", "activate"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+          ] } }]
+        },
+        {
+          "name": "Create Inactive Account (Setup, never activated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/accounts", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "accounts"] },
+            "description": "Deliberately left Draft (never activated) — the fixture for AccountNotActiveError ('Inactive Account' per this module's naming: any non-Active status, Draft or Inactive, triggers the same error).",
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"code\": \"JE-1999-{{jeYear}}\",\n  \"name\": \"JE Inactive\",\n  \"accountType\": \"ASSET\",\n  \"accountGroupUuid\": \"{{assetAccountGroupUuid}}\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"inactiveAccountUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Create Summary Account (Setup, isPostingAccount=false)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/accounts", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "accounts"] },
+            "description": "The fixture for AccountNotPostableError — a Summary Account (frozen architectural decision: only Posting Accounts may receive Journal Entry postings).",
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"code\": \"JE-1998-{{jeYear}}\",\n  \"name\": \"JE Summary\",\n  \"accountType\": \"ASSET\",\n  \"accountGroupUuid\": \"{{assetAccountGroupUuid}}\",\n  \"isPostingAccount\": false\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"summaryAccountUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Activate Summary Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{summaryAccountUuid}}/activate", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "accounts", "{{summaryAccountUuid}}", "activate"] },
+            "description": "Active AND a Summary Account at the same time — isolates AccountNotPostableError from AccountNotActiveError."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+          ] } }]
+        },
+        {
+          "name": "Create Financial Year (Primary, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{jeYear}}-01-01\",\n  \"endDate\": \"{{jeYear}}-12-31\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"financialYearUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Open Financial Year (Primary, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{financialYearUuid}}/open", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years", "{{financialYearUuid}}", "open"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Status is OPEN\", function () { pm.expect(pm.response.json().data.status).to.eql(\"OPEN\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Fiscal Period (Primary, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "fiscal-periods"] },
+            "description": "Covers the {{jeYear}}-04-15/{{jeYear}}-04-16 posting dates used by the primary/unbalanced Journal Entry fixtures below.",
+            "body": { "mode": "raw", "raw": "{\n  \"financialYearUuid\": \"{{financialYearUuid}}\",\n  \"startDate\": \"{{jeYear}}-04-01\",\n  \"endDate\": \"{{jeYear}}-04-30\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.test(\"Status is OPEN\", function () { pm.expect(pm.response.json().data.status).to.eql(\"OPEN\"); });",
+            "pm.collectionVariables.set(\"fiscalPeriodUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Create Financial Year (Current, Setup — for Reversal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years"] },
+            "description": "Covers the REAL current date, since reverseJournalEntry always posts the reversing entry at 'now' — unlike every other fixture in this collection, this one is NOT randomized (it cannot be; it must contain today), so re-running this collection on the same calendar day would otherwise collide with the previous run's leftover row (FinancialYearOverlapError). The test script below makes this step idempotent: on 409, it looks up and reuses the already-existing Financial Year instead of failing, so the collection is safely re-runnable without manual cleanup between runs.",
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{currentFyStart}}\",\n  \"endDate\": \"{{currentFyEnd}}\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201 (new) or 409 (already exists from a prior run today)\", function () {",
+            "    pm.expect([201, 409]).to.include(pm.response.code);",
+            "});",
+            "if (pm.response.code === 201) {",
+            "    pm.collectionVariables.set(\"currentFinancialYearUuid\", pm.response.json().data.uuid);",
+            "} else {",
+            "    pm.sendRequest({",
+            "        url: pm.variables.get(\"baseUrl\") + \"/api/v1/accounting/financial-years?companyUuid=\" + pm.collectionVariables.get(\"companyUuid\"),",
+            "        method: \"GET\",",
+            "        header: { \"Authorization\": \"Bearer \" + pm.collectionVariables.get(\"accessToken\"), \"X-Tenant-Id\": pm.collectionVariables.get(\"tenantId\") }",
+            "    }, function (err, res) {",
+            "        if (err) return;",
+            "        const todayIso = pm.collectionVariables.get(\"currentFyStart\");",
+            "        const match = res.json().data.find(function (fy) { return fy.startDate.slice(0, 10) <= todayIso && fy.endDate.slice(0, 10) >= todayIso; });",
+            "        if (match) pm.collectionVariables.set(\"currentFinancialYearUuid\", match.uuid);",
+            "    });",
+            "}"
+          ] } }]
+        },
+        {
+          "name": "Open Financial Year (Current, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{currentFinancialYearUuid}}/open", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years", "{{currentFinancialYearUuid}}", "open"] },
+            "description": "Tolerant of 409 (ACC_INVALID_FINANCIAL_YEAR_STATUS_TRANSITION) — the reused fixture from a prior run today is already Open."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200 (opened) or 409 (already Open from a prior run today)\", function () {",
+            "    pm.expect([200, 409]).to.include(pm.response.code);",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Create Fiscal Period (Current, Setup — for Reversal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "fiscal-periods"] },
+            "description": "Same idempotency reasoning as 'Create Financial Year (Current)' above — on 409 (FiscalPeriodOverlapError, a prior run today already created this period), looks up and reuses the existing one instead of failing.",
+            "body": { "mode": "raw", "raw": "{\n  \"financialYearUuid\": \"{{currentFinancialYearUuid}}\",\n  \"startDate\": \"{{currentFpStart}}\",\n  \"endDate\": \"{{currentFpEnd}}\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201 (new) or 409 (already exists from a prior run today)\", function () {",
+            "    pm.expect([201, 409]).to.include(pm.response.code);",
+            "});",
+            "if (pm.response.code === 201) {",
+            "    pm.collectionVariables.set(\"currentFiscalPeriodUuid\", pm.response.json().data.uuid);",
+            "} else {",
+            "    pm.sendRequest({",
+            "        url: pm.variables.get(\"baseUrl\") + \"/api/v1/accounting/fiscal-periods?financialYearUuid=\" + pm.collectionVariables.get(\"currentFinancialYearUuid\"),",
+            "        method: \"GET\",",
+            "        header: { \"Authorization\": \"Bearer \" + pm.collectionVariables.get(\"accessToken\"), \"X-Tenant-Id\": pm.collectionVariables.get(\"tenantId\") }",
+            "    }, function (err, res) {",
+            "        if (err) return;",
+            "        const todayIso = pm.collectionVariables.get(\"currentFpStart\");",
+            "        const match = res.json().data.find(function (fp) { return fp.startDate.slice(0, 10) <= todayIso && fp.endDate.slice(0, 10) >= todayIso; });",
+            "        if (match) pm.collectionVariables.set(\"currentFiscalPeriodUuid\", match.uuid);",
+            "    });",
+            "}"
+          ] } }]
+        },
+        {
+          "name": "Create Financial Year (For Closed-FY Test, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{closedFyYear}}-01-01\",\n  \"endDate\": \"{{closedFyYear}}-12-31\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"closedFyFinancialYearUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Open then Close Financial Year (For Closed-FY Test, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{closedFyFinancialYearUuid}}/open", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years", "{{closedFyFinancialYearUuid}}", "open"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+          ] } }]
+        },
+        {
+          "name": "Close Financial Year (For Closed-FY Test, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{closedFyFinancialYearUuid}}/close", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years", "{{closedFyFinancialYearUuid}}", "close"] },
+            "description": "close() accepts Open directly (00_BUSINESS_RULES.md Ch.5.5) — no need to go through Closing first."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Status is CLOSED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"CLOSED\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Fiscal Period (For Closed-FY Test, Setup, stays Open)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "fiscal-periods"] },
+            "description": "Left Open deliberately — validateJournalEntryPostable checks Financial Year open BEFORE Fiscal Period open, so a Closed Financial Year is caught regardless of this period's own status.",
+            "body": { "mode": "raw", "raw": "{\n  \"financialYearUuid\": \"{{closedFyFinancialYearUuid}}\",\n  \"startDate\": \"{{closedFyYear}}-04-01\",\n  \"endDate\": \"{{closedFyYear}}-04-30\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"closedFyFiscalPeriodUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Create Financial Year (For Closed-FP Test, Setup, stays Open)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{closedFpYear}}-01-01\",\n  \"endDate\": \"{{closedFpYear}}-12-31\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"forClosedFpFinancialYearUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Open Financial Year (For Closed-FP Test, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{forClosedFpFinancialYearUuid}}/open", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "financial-years", "{{forClosedFpFinancialYearUuid}}", "open"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+          ] } }]
+        },
+        {
+          "name": "Create Fiscal Period (For Closed-FP Test, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "fiscal-periods"] },
+            "body": { "mode": "raw", "raw": "{\n  \"financialYearUuid\": \"{{forClosedFpFinancialYearUuid}}\",\n  \"startDate\": \"{{closedFpYear}}-04-01\",\n  \"endDate\": \"{{closedFpYear}}-04-30\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"forClosedFpFiscalPeriodUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Soft Close then Close Fiscal Period (For Closed-FP Test, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{forClosedFpFiscalPeriodUuid}}/soft-close", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "fiscal-periods", "{{forClosedFpFiscalPeriodUuid}}", "soft-close"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+          ] } }]
+        },
+        {
+          "name": "Close Fiscal Period (For Closed-FP Test, Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods/{{forClosedFpFiscalPeriodUuid}}/close", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "fiscal-periods", "{{forClosedFpFiscalPeriodUuid}}", "close"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Status is CLOSED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"CLOSED\"); });"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Create Journal Entry",
+      "item": [
+        {
+          "name": "Create Journal Entry - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\",\n  \"lines\": [\n    { \"accountUuid\": \"{{cashAccountUuid}}\", \"debitAmount\": \"100\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{revenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"100\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 401\", function () { pm.response.to.have.status(401); });",
+            "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () { pm.expect(pm.response.json().error.code).to.eql(\"AUTH_MISSING_TOKEN\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Validation Error (Missing Lines Field)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+            "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Validation Error (Fewer Than Two Lines)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "description": "Rejected by create-journal-entry.dto.ts's Zod schema (`.min(2)`) before the Business layer's own DBL-002 check ever runs.",
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\",\n  \"lines\": [\n    { \"accountUuid\": \"{{cashAccountUuid}}\", \"debitAmount\": \"100\", \"creditAmount\": \"0\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+            "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Invalid Account (Not Found)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\",\n  \"lines\": [\n    { \"accountUuid\": \"00000000-0000-0000-0000-000000000000\", \"debitAmount\": \"100\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{revenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"100\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+            "pm.test(\"Error code is ACC_ACCOUNT_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_ACCOUNT_NOT_FOUND\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Inactive Account (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\",\n  \"lines\": [\n    { \"accountUuid\": \"{{inactiveAccountUuid}}\", \"debitAmount\": \"100\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{revenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"100\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 403\", function () { pm.response.to.have.status(403); });",
+            "pm.test(\"Error code is ACC_ACCOUNT_NOT_ACTIVE\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_ACCOUNT_NOT_ACTIVE\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Non-Posting (Summary) Account (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\",\n  \"lines\": [\n    { \"accountUuid\": \"{{summaryAccountUuid}}\", \"debitAmount\": \"100\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{revenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"100\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+            "pm.test(\"Error code is ACC_ACCOUNT_NOT_POSTABLE\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_ACCOUNT_NOT_POSTABLE\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Invalid Line Amount (Both Debit and Credit Positive)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\",\n  \"lines\": [\n    { \"accountUuid\": \"{{cashAccountUuid}}\", \"debitAmount\": \"100\", \"creditAmount\": \"100\" },\n    { \"accountUuid\": \"{{revenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"100\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+            "pm.test(\"Error code is ACC_INVALID_JOURNAL_ENTRY_LINE_AMOUNT\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_JOURNAL_ENTRY_LINE_AMOUNT\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Minimum Distinct Accounts (Same Account Both Lines)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\",\n  \"lines\": [\n    { \"accountUuid\": \"{{cashAccountUuid}}\", \"debitAmount\": \"100\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{cashAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"100\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_MINIMUM_DISTINCT_ACCOUNTS\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_MINIMUM_DISTINCT_ACCOUNTS\"); });"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Success (Balanced)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "description": "Saves {{journalEntryUuid}} for every subsequent Get/Update/Submit/Reject/Post/Reverse request in this collection.",
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-15\",\n  \"narration\": \"Primary balanced entry\",\n  \"lines\": [\n    { \"accountUuid\": \"{{cashAccountUuid}}\", \"debitAmount\": \"500.00\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{revenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"500.00\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "const json = pm.response.json();",
+            "pm.test(\"Journal Entry is Draft with two lines\", function () {",
+            "    pm.expect(json.data.uuid).to.be.a(\"string\");",
+            "    pm.expect(json.data.status).to.eql(\"DRAFT\");",
+            "    pm.expect(json.data.lines).to.have.lengthOf(2);",
+            "});",
+            "pm.test(\"Line amounts round-trip exactly\", function () {",
+            "    pm.expect(json.data.lines[0].debitAmount).to.eql(\"500\");",
+            "    pm.expect(json.data.lines[1].creditAmount).to.eql(\"500\");",
+            "});",
+            "pm.test(\"Internal fields are never exposed (id, tenantId, accountId, createdBy, updatedBy, deletedAt)\", function () {",
+            "    pm.expect(json.data.id).to.be.undefined;",
+            "    pm.expect(json.data.tenantId).to.be.undefined;",
+            "    pm.expect(json.data.createdBy).to.be.undefined;",
+            "    pm.expect(json.data.updatedBy).to.be.undefined;",
+            "    pm.expect(json.data.deletedAt).to.be.undefined;",
+            "    pm.expect(json.data.lines[0].id).to.be.undefined;",
+            "    pm.expect(json.data.lines[0].accountId).to.be.undefined;",
+            "    pm.expect(json.data.lines[0].journalEntryId).to.be.undefined;",
+            "});",
+            "pm.collectionVariables.set(\"journalEntryUuid\", json.data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Create Journal Entry - Success (Unbalanced, Allowed As Draft)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "description": "500 debit vs 400 credit — deliberately unbalanced. Succeeds at creation (DBL-001 is deferred to posting, see collection-level design note); rejected later at 'Post Journal Entry - Unbalanced (422)'. Saves {{unbalancedJournalEntryUuid}}.",
+            "body": { "mode": "raw", "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{jeYear}}-04-16\",\n  \"narration\": \"Deliberately unbalanced\",\n  \"lines\": [\n    { \"accountUuid\": \"{{cashAccountUuid}}\", \"debitAmount\": \"500.00\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{revenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"400.00\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201 (unbalanced Draft is allowed)\", function () { pm.response.to.have.status(201); });",
+            "pm.collectionVariables.set(\"unbalancedJournalEntryUuid\", pm.response.json().data.uuid);"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Get Journal Entry",
+      "item": [
+        {
+          "name": "Get Journal Entry - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/not-a-uuid", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "not-a-uuid"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+            "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+          ] } }]
+        },
+        {
+          "name": "Get Journal Entry - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "00000000-0000-0000-0000-000000000000"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_NOT_FOUND\"); });"
+          ] } }]
+        },
+        {
+          "name": "Get Journal Entry - Success",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "const json = pm.response.json();",
+            "pm.test(\"Returns the same Journal Entry\", function () {",
+            "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"journalEntryUuid\"));",
+            "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+            "    pm.expect(json.data.status).to.eql(\"DRAFT\");",
+            "});"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "List Journal Entries",
+      "item": [
+        {
+          "name": "List Journal Entries - Success (Tenant-Wide)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"] },
+            "description": "Unpaginated (07_REST_API_STANDARDS.md Ch.14 otherwise mandates cursor pagination) — same flagged Repository-layer gap as every other list endpoint in this module."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "const json = pm.response.json();",
+            "pm.test(\"Response includes both fixtures created above\", function () {",
+            "    pm.expect(json.data).to.be.an(\"array\");",
+            "    const uuids = json.data.map(function (je) { return je.uuid; });",
+            "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"journalEntryUuid\"));",
+            "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"unbalancedJournalEntryUuid\"));",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "List Journal Entries - Filtered By Company",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries?companyUuid={{companyUuid}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"], "query": [{ "key": "companyUuid", "value": "{{companyUuid}}" }] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Response is a non-empty array\", function () { pm.expect(pm.response.json().data).to.be.an(\"array\").that.is.not.empty; });"
+          ] } }]
+        },
+        {
+          "name": "List Journal Entries - Filtered By Status (DRAFT)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries?status=DRAFT", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"], "query": [{ "key": "status", "value": "DRAFT" }] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "const json = pm.response.json();",
+            "pm.test(\"Every returned entry is DRAFT\", function () {",
+            "    json.data.forEach(function (je) { pm.expect(je.status).to.eql(\"DRAFT\"); });",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "List Journal Entries - Validation Error (Malformed Company Uuid Query Param)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries?companyUuid=not-a-uuid", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries"], "query": [{ "key": "companyUuid", "value": "not-a-uuid" }] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+            "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Update Draft",
+      "item": [
+        {
+          "name": "Update Draft - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "00000000-0000-0000-0000-000000000000"] },
+            "body": { "mode": "raw", "raw": "{\n  \"narration\": \"does not matter\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_NOT_FOUND\"); });"
+          ] } }]
+        },
+        {
+          "name": "Update Draft - Success (Revise Narration)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"narration\": \"Revised while Draft\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Narration was revised\", function () { pm.expect(pm.response.json().data.narration).to.eql(\"Revised while Draft\"); });"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Submit / Reject",
+      "item": [
+        {
+          "name": "Submit Journal Entry - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/00000000-0000-0000-0000-000000000000/submit", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "00000000-0000-0000-0000-000000000000", "submit"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_NOT_FOUND\"); });"
+          ] } }]
+        },
+        {
+          "name": "Submit Journal Entry - Success (Draft -> PendingApproval)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}/submit", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}", "submit"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Status is PENDING_APPROVAL\", function () { pm.expect(pm.response.json().data.status).to.eql(\"PENDING_APPROVAL\"); });"
+          ] } }]
+        },
+        {
+          "name": "Submit Journal Entry - Invalid Transition (Already PendingApproval)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}/submit", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}", "submit"] },
+            "description": "submitForApproval() only accepts Draft as its starting state — the entry is now PendingApproval from the request above."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 409\", function () { pm.response.to.have.status(409); });",
+            "pm.test(\"Error code is ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\"); });"
+          ] } }]
+        },
+        {
+          "name": "Reject Journal Entry - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/00000000-0000-0000-0000-000000000000/reject", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "00000000-0000-0000-0000-000000000000", "reject"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_NOT_FOUND\"); });"
+          ] } }]
+        },
+        {
+          "name": "Reject Journal Entry - Invalid Transition (Unbalanced Entry Is Still Draft)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{unbalancedJournalEntryUuid}}/reject", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{unbalancedJournalEntryUuid}}", "reject"] },
+            "description": "reject() only accepts PendingApproval as its starting state — this entry is Draft, never submitted."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 409\", function () { pm.response.to.have.status(409); });",
+            "pm.test(\"Error code is ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\"); });"
+          ] } }]
+        },
+        {
+          "name": "Reject Journal Entry - Success (PendingApproval -> Draft)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}/reject", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}", "reject"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Status is back to DRAFT\", function () { pm.expect(pm.response.json().data.status).to.eql(\"DRAFT\"); });"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Post",
+      "item": [
+        {
+          "name": "Post Journal Entry - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/00000000-0000-0000-0000-000000000000/post", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "00000000-0000-0000-0000-000000000000", "post"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_NOT_FOUND\"); });"
+          ] } }]
+        },
+        {
+          "name": "Post Journal Entry - Unbalanced (422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{unbalancedJournalEntryUuid}}/post", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{unbalancedJournalEntryUuid}}", "post"] },
+            "description": "500 debit vs 400 credit (00_BUSINESS_RULES.md Ch.16 DBL-001) — rejected by validate-journal-entry-postable.service.ts before any write."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_NOT_BALANCED\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_NOT_BALANCED\"); });"
+          ] } }]
+        },
+        {
+          "name": "Post Journal Entry - Closed Fiscal Period (403)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{closedFpJournalEntryUuid}}/post", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{closedFpJournalEntryUuid}}", "post"] },
+            "description": "Posting date falls within the Closed Fiscal Period fixture from Setup (00_BUSINESS_RULES.md Ch.20.7 JRN-002)."
+          },
+          "response": [],
+          "event": [{ "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+            "// Inline setup: create a fresh balanced Draft entry dated inside the",
+            "// Closed Fiscal Period fixture, immediately before attempting to post it.",
+            "const postRequest = {",
+            "    url: pm.variables.get(\"baseUrl\") + \"/api/v1/accounting/journal-entries\",",
+            "    method: \"POST\",",
+            "    header: { \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer \" + pm.collectionVariables.get(\"accessToken\"), \"X-Tenant-Id\": pm.collectionVariables.get(\"tenantId\") },",
+            "    body: { mode: \"raw\", raw: JSON.stringify({",
+            "        companyUuid: pm.collectionVariables.get(\"companyUuid\"),",
+            "        postingDate: pm.collectionVariables.get(\"closedFpYear\") + \"-04-15\",",
+            "        lines: [",
+            "            { accountUuid: pm.collectionVariables.get(\"cashAccountUuid\"), debitAmount: \"50\", creditAmount: \"0\" },",
+            "            { accountUuid: pm.collectionVariables.get(\"revenueAccountUuid\"), debitAmount: \"0\", creditAmount: \"50\" }",
+            "        ]",
+            "    }) }",
+            "};",
+            "pm.sendRequest(postRequest, function (err, res) {",
+            "    if (!err && res.code === 201) {",
+            "        pm.collectionVariables.set(\"closedFpJournalEntryUuid\", res.json().data.uuid);",
+            "    }",
+            "});"
+          ] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 403\", function () { pm.response.to.have.status(403); });",
+            "pm.test(\"Error code is ACC_FISCAL_PERIOD_NOT_OPEN\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_FISCAL_PERIOD_NOT_OPEN\"); });"
+          ] } }]
+        },
+        {
+          "name": "Post Journal Entry - Closed Financial Year (403)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{closedFyJournalEntryUuid}}/post", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{closedFyJournalEntryUuid}}", "post"] },
+            "description": "Posting date falls within the Closed Financial Year fixture from Setup (00_BUSINESS_RULES.md Ch.5.7 FY-003). Its own Fiscal Period is still Open — Financial-Year-open is checked BEFORE Fiscal-Period-open, so this is caught regardless."
+          },
+          "response": [],
+          "event": [{ "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+            "const postRequest = {",
+            "    url: pm.variables.get(\"baseUrl\") + \"/api/v1/accounting/journal-entries\",",
+            "    method: \"POST\",",
+            "    header: { \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer \" + pm.collectionVariables.get(\"accessToken\"), \"X-Tenant-Id\": pm.collectionVariables.get(\"tenantId\") },",
+            "    body: { mode: \"raw\", raw: JSON.stringify({",
+            "        companyUuid: pm.collectionVariables.get(\"companyUuid\"),",
+            "        postingDate: pm.collectionVariables.get(\"closedFyYear\") + \"-04-15\",",
+            "        lines: [",
+            "            { accountUuid: pm.collectionVariables.get(\"cashAccountUuid\"), debitAmount: \"50\", creditAmount: \"0\" },",
+            "            { accountUuid: pm.collectionVariables.get(\"revenueAccountUuid\"), debitAmount: \"0\", creditAmount: \"50\" }",
+            "        ]",
+            "    }) }",
+            "};",
+            "pm.sendRequest(postRequest, function (err, res) {",
+            "    if (!err && res.code === 201) {",
+            "        pm.collectionVariables.set(\"closedFyJournalEntryUuid\", res.json().data.uuid);",
+            "    }",
+            "});"
+          ] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 403\", function () { pm.response.to.have.status(403); });",
+            "pm.test(\"Error code is ACC_FINANCIAL_YEAR_NOT_OPEN\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_FINANCIAL_YEAR_NOT_OPEN\"); });"
+          ] } }]
+        },
+        {
+          "name": "Post Journal Entry - Success",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}/post", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}", "post"] },
+            "description": "The primary entry is now Draft again (rejected above), balanced, and dated within the Open primary Fiscal Period/Financial Year — every precondition satisfied. Appends one Ledger Entry per line (LDG-001), verified directly against the database outside Postman (see this milestone's verification notes) since Ledger has no HTTP endpoint of its own."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Status is POSTED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"POSTED\"); });"
+          ] } }]
+        },
+        {
+          "name": "Post Journal Entry - Invalid Transition (Already Posted)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}/post", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}", "post"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 409\", function () { pm.response.to.have.status(409); });",
+            "pm.test(\"Error code is ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\"); });"
+          ] } }]
+        },
+        {
+          "name": "Update Draft - Not Editable (Posted Entry, 409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}"] },
+            "description": "The primary entry is now Posted (from the request above) — update-journal-entry.service.ts rejects any modification once posted (00_BUSINESS_RULES.md Ch.20.5/JRN-003).",
+            "body": { "mode": "raw", "raw": "{\n  \"narration\": \"should be rejected\"\n}", "options": { "raw": { "language": "json" } } }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 409\", function () { pm.response.to.have.status(409); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_NOT_EDITABLE\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_NOT_EDITABLE\"); });"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Reverse",
+      "item": [
+        {
+          "name": "Reverse Journal Entry - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/00000000-0000-0000-0000-000000000000/reverse", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "00000000-0000-0000-0000-000000000000", "reverse"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+            "pm.test(\"Error code is ACC_JOURNAL_ENTRY_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_JOURNAL_ENTRY_NOT_FOUND\"); });"
+          ] } }]
+        },
+        {
+          "name": "Reverse Journal Entry - Invalid Transition (Draft, Not Posted)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{unbalancedJournalEntryUuid}}/reverse", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{unbalancedJournalEntryUuid}}", "reverse"] },
+            "description": "markReversed() only accepts Posted as its starting state (00_BUSINESS_RULES.md Ch.20.7 JRN-003) — this entry is Draft."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 409\", function () { pm.response.to.have.status(409); });",
+            "pm.test(\"Error code is ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\"); });"
+          ] } }]
+        },
+        {
+          "name": "Reverse Journal Entry - Success (201, Inverted Lines)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}/reverse", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}", "reverse"] },
+            "description": "The primary entry is Posted. Creates and posts a NEW Journal Entry with exactly inverted debit/credit amounts (JRN-003), posted at 'now' — hence the Current Financial Year/Fiscal Period fixtures from Setup. Returns the new reversing entry, not the original. Saves {{reversingJournalEntryUuid}}."
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+            "const json = pm.response.json();",
+            "pm.test(\"Reversing entry is Posted with two lines\", function () {",
+            "    pm.expect(json.data.status).to.eql(\"POSTED\");",
+            "    pm.expect(json.data.lines).to.have.lengthOf(2);",
+            "});",
+            "pm.test(\"Lines are exactly inverted relative to the original (500 debit <-> 500 credit)\", function () {",
+            "    const amounts = json.data.lines.map(function (l) { return l.debitAmount + \"/\" + l.creditAmount; });",
+            "    pm.expect(amounts).to.include.members([\"0/500\", \"500/0\"]);",
+            "});",
+            "pm.test(\"Narration references the original entry's uuid\", function () {",
+            "    pm.expect(json.data.narration).to.include(pm.collectionVariables.get(\"journalEntryUuid\"));",
+            "});",
+            "pm.collectionVariables.set(\"reversingJournalEntryUuid\", json.data.uuid);"
+          ] } }]
+        },
+        {
+          "name": "Get Journal Entry - Original Is Now REVERSED",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+            "pm.test(\"Status is REVERSED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"REVERSED\"); });"
+          ] } }]
+        },
+        {
+          "name": "Reverse Journal Entry - Invalid Transition (Already Reversed)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-Tenant-Id", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{journalEntryUuid}}/reverse", "host": ["{{baseUrl}}"], "path": ["api", "v1", "accounting", "journal-entries", "{{journalEntryUuid}}", "reverse"] }
+          },
+          "response": [],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status code is 409\", function () { pm.response.to.have.status(409); });",
+            "pm.test(\"Error code is ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_JOURNAL_ENTRY_STATUS_TRANSITION\"); });"
+          ] } }]
+        }
+      ]
+    }
+  ]
+}

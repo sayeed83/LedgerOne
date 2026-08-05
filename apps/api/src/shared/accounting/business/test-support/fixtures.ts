@@ -17,6 +17,13 @@ import { AccountType } from "../../domain/enums/account-type.enum";
 import { AccountStatus } from "../../domain/enums/account-status.enum";
 import { DecimalValue } from "../../domain/value-objects/decimal-value.value-object";
 import { IAccountingRepository } from "../../domain/interfaces/accounting-repository.interface";
+import { JournalEntry, JournalEntryLine } from "../../domain/aggregates/journal-entry.aggregate";
+import { JournalEntryStatus } from "../../domain/enums/journal-entry-status.enum";
+import { IJournalEntryRepository } from "../../domain/interfaces/journal-entry-repository.interface";
+import { LedgerEntry } from "../../domain/entities/ledger-entry.entity";
+import { ILedgerRepository } from "../../domain/interfaces/ledger-repository.interface";
+import { ITransactionRunner } from "../../domain/interfaces/transaction-runner.interface";
+import { IClock } from "../../domain/interfaces/clock.interface";
 
 export function buildFinancialYear(overrides: Partial<FinancialYear> = {}): FinancialYear {
   const base = new FinancialYear(
@@ -161,6 +168,102 @@ export function buildAccount(overrides: Partial<Account> = {}): Account {
     null,
   );
   return Object.assign(Object.create(Account.prototype), base, overrides) as Account;
+}
+
+export function buildJournalEntryLine(overrides: Partial<JournalEntryLine> = {}): JournalEntryLine {
+  const base = new JournalEntryLine(
+    1n,
+    "00000000-0000-0000-0000-000000000800",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    1n,
+    1n,
+    DecimalValue.create("1000.00"),
+    DecimalValue.create("0"),
+    new Date("2026-04-15T00:00:00.000Z"),
+    new Date("2026-04-15T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(JournalEntryLine.prototype), base, overrides) as JournalEntryLine;
+}
+
+export function buildJournalEntry(overrides: Partial<JournalEntry> = {}): JournalEntry {
+  const base = new JournalEntry(
+    1n,
+    "00000000-0000-0000-0000-000000000801",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    new Date("2026-04-15T00:00:00.000Z"),
+    "Test entry",
+    JournalEntryStatus.Draft,
+    null,
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+    [
+      buildJournalEntryLine({ id: 1n, uuid: "00000000-0000-0000-0000-000000000800", accountId: 1n, debitAmount: DecimalValue.create("1000.00"), creditAmount: DecimalValue.create("0") }),
+      buildJournalEntryLine({ id: 2n, uuid: "00000000-0000-0000-0000-000000000802", accountId: 2n, debitAmount: DecimalValue.create("0"), creditAmount: DecimalValue.create("1000.00") }),
+    ],
+  );
+  return Object.assign(Object.create(JournalEntry.prototype), base, overrides) as JournalEntry;
+}
+
+export function buildLedgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEntry {
+  const base = new LedgerEntry(
+    1n,
+    "00000000-0000-0000-0000-000000000900",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    1n,
+    1n,
+    DecimalValue.create("1000.00"),
+    DecimalValue.create("0"),
+    new Date("2026-04-15T00:00:00.000Z"),
+    new Date("2026-04-15T00:00:00.000Z"),
+    null,
+  );
+  return Object.assign(Object.create(LedgerEntry.prototype), base, overrides) as LedgerEntry;
+}
+
+export function createFakeJournalEntryRepository(): jest.Mocked<IJournalEntryRepository> {
+  return {
+    createJournalEntry: jest.fn(),
+    findJournalEntryByUuid: jest.fn(),
+    listJournalEntries: jest.fn(),
+    updateJournalEntry: jest.fn(),
+    submitJournalEntryForApproval: jest.fn(),
+    postJournalEntry: jest.fn(),
+    rejectJournalEntry: jest.fn(),
+    markJournalEntryReversed: jest.fn(),
+    addJournalEntryLine: jest.fn(),
+    removeJournalEntryLine: jest.fn(),
+  };
+}
+
+export function createFakeLedgerRepository(): jest.Mocked<ILedgerRepository> {
+  return {
+    appendLedgerEntry: jest.fn(),
+    findLedgerEntryByUuid: jest.fn(),
+    findLedgerEntryByJournalEntryLineId: jest.fn(),
+    listLedgerEntries: jest.fn(),
+  };
+}
+
+/** Runs `fn` immediately against a sentinel `tx` value — no real Prisma transaction in unit tests (05_CODING_STANDARDS.md Ch.10.6). */
+export function createFakeTransactionRunner(): jest.Mocked<ITransactionRunner> {
+  return {
+    run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn("fake-tx")),
+  } as unknown as jest.Mocked<ITransactionRunner>;
+}
+
+export function createFakeClock(now: Date = new Date("2026-04-20T00:00:00.000Z")): jest.Mocked<IClock> {
+  return {
+    now: jest.fn(() => now),
+  };
 }
 
 export function createFakeAccountingRepository(): jest.Mocked<IAccountingRepository> {

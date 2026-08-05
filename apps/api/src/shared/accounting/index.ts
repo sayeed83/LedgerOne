@@ -46,6 +46,14 @@ import { updateAccountController } from "./presentation/controllers/v1/update-ac
 import { listAccountsController } from "./presentation/controllers/v1/list-accounts.controller";
 import { activateAccountController } from "./presentation/controllers/v1/activate-account.controller";
 import { deactivateAccountController } from "./presentation/controllers/v1/deactivate-account.controller";
+import { createJournalEntryController } from "./presentation/controllers/v1/create-journal-entry.controller";
+import { getJournalEntryController } from "./presentation/controllers/v1/get-journal-entry.controller";
+import { updateJournalEntryController } from "./presentation/controllers/v1/update-journal-entry.controller";
+import { listJournalEntriesController } from "./presentation/controllers/v1/list-journal-entries.controller";
+import { submitJournalEntryController } from "./presentation/controllers/v1/submit-journal-entry.controller";
+import { rejectJournalEntryController } from "./presentation/controllers/v1/reject-journal-entry.controller";
+import { postJournalEntryController } from "./presentation/controllers/v1/post-journal-entry.controller";
+import { reverseJournalEntryController } from "./presentation/controllers/v1/reverse-journal-entry.controller";
 
 export function createAccountingRouter(deps: AccountingDependencies): Router {
   const router = Router();
@@ -146,6 +154,27 @@ export function createAccountingRouter(deps: AccountingDependencies): Router {
   router.put("/accounts/:accountUuid", updateAccountController(deps));
   router.post("/accounts/:accountUuid/activate", activateAccountController(deps));
   router.post("/accounts/:accountUuid/deactivate", deactivateAccountController(deps));
+
+  // --- Journal Entry ---
+  // Tenant-owned (MT-001), mirroring Account's own ownership shape. Ledger
+  // Entry has NO endpoints of its own — Ch.19.18: "Only the Journal Entry
+  // posting process may create Ledger entries — no direct, manual creation
+  // or editing... is permitted through any interface." A Ledger Entry is
+  // only ever an internal side effect of `POST .../post`, never a
+  // separately addressable resource this API exposes. `submit`/`reject`/
+  // `post`/`reverse` all take no request body (00_BUSINESS_RULES.md Ch.20.5
+  // state transitions) — JRN-004's approval-threshold decision and APR-002's
+  // segregation-of-duties are not implemented anywhere in this module
+  // (no Approval Workflow module exists), so `submit`/`reject` are exposed
+  // as plain, unconditional transitions the caller decides to invoke.
+  router.post("/journal-entries", createJournalEntryController(deps));
+  router.get("/journal-entries", listJournalEntriesController(deps));
+  router.get("/journal-entries/:journalEntryUuid", getJournalEntryController(deps));
+  router.put("/journal-entries/:journalEntryUuid", updateJournalEntryController(deps));
+  router.post("/journal-entries/:journalEntryUuid/submit", submitJournalEntryController(deps));
+  router.post("/journal-entries/:journalEntryUuid/reject", rejectJournalEntryController(deps));
+  router.post("/journal-entries/:journalEntryUuid/post", postJournalEntryController(deps));
+  router.post("/journal-entries/:journalEntryUuid/reverse", reverseJournalEntryController(deps));
 
   return router;
 }
