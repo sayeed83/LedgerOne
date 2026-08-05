@@ -54,6 +54,9 @@ import { submitJournalEntryController } from "./presentation/controllers/v1/subm
 import { rejectJournalEntryController } from "./presentation/controllers/v1/reject-journal-entry.controller";
 import { postJournalEntryController } from "./presentation/controllers/v1/post-journal-entry.controller";
 import { reverseJournalEntryController } from "./presentation/controllers/v1/reverse-journal-entry.controller";
+import { getAccountLedgerController } from "./presentation/controllers/v1/get-account-ledger.controller";
+import { getLedgerController } from "./presentation/controllers/v1/get-ledger.controller";
+import { getLedgerEntryController } from "./presentation/controllers/v1/get-ledger-entry.controller";
 
 export function createAccountingRouter(deps: AccountingDependencies): Router {
   const router = Router();
@@ -156,17 +159,21 @@ export function createAccountingRouter(deps: AccountingDependencies): Router {
   router.post("/accounts/:accountUuid/deactivate", deactivateAccountController(deps));
 
   // --- Journal Entry ---
-  // Tenant-owned (MT-001), mirroring Account's own ownership shape. Ledger
-  // Entry has NO endpoints of its own — Ch.19.18: "Only the Journal Entry
-  // posting process may create Ledger entries — no direct, manual creation
-  // or editing... is permitted through any interface." A Ledger Entry is
-  // only ever an internal side effect of `POST .../post`, never a
-  // separately addressable resource this API exposes. `submit`/`reject`/
-  // `post`/`reverse` all take no request body (00_BUSINESS_RULES.md Ch.20.5
-  // state transitions) — JRN-004's approval-threshold decision and APR-002's
-  // segregation-of-duties are not implemented anywhere in this module
-  // (no Approval Workflow module exists), so `submit`/`reject` are exposed
-  // as plain, unconditional transitions the caller decides to invoke.
+  // Tenant-owned (MT-001), mirroring Account's own ownership shape. Ch.19.18:
+  // "Only the Journal Entry posting process may create Ledger entries — no
+  // direct, manual creation or editing... is permitted through any
+  // interface." That governs WRITES only — the `--- General Ledger (read
+  // model) ---` section below adds GET-only endpoints over the same
+  // `LedgerEntry` data, which does not create or edit anything and so does
+  // not conflict with Ch.19.18 (a prior version of this comment read "Ledger
+  // Entry has NO endpoints of its own," written before this milestone
+  // designed the read side; corrected here, not a handbook contradiction).
+  // `submit`/`reject`/`post`/`reverse` all take no request body
+  // (00_BUSINESS_RULES.md Ch.20.5 state transitions) — JRN-004's
+  // approval-threshold decision and APR-002's segregation-of-duties are not
+  // implemented anywhere in this module (no Approval Workflow module
+  // exists), so `submit`/`reject` are exposed as plain, unconditional
+  // transitions the caller decides to invoke.
   router.post("/journal-entries", createJournalEntryController(deps));
   router.get("/journal-entries", listJournalEntriesController(deps));
   router.get("/journal-entries/:journalEntryUuid", getJournalEntryController(deps));
@@ -175,6 +182,23 @@ export function createAccountingRouter(deps: AccountingDependencies): Router {
   router.post("/journal-entries/:journalEntryUuid/reject", rejectJournalEntryController(deps));
   router.post("/journal-entries/:journalEntryUuid/post", postJournalEntryController(deps));
   router.post("/journal-entries/:journalEntryUuid/reverse", reverseJournalEntryController(deps));
+
+  // --- General Ledger (read model) ---
+  // Tenant-owned (MT-001), mirroring Journal Entry's own ownership shape.
+  // GET-only, by design (00_BUSINESS_RULES.md Ch.19 — the Ledger is a
+  // derived, automatic record; there is no create/update/delete surface for
+  // it at all, structurally, not merely by omission). `GET /ledger` and
+  // `GET /ledger/accounts/:accountUuid` are the SAME operation (Ch.19.1
+  // defines a Ledger strictly per-account — `accountUuid` is required on
+  // both, via query or path respectively; see get-ledger.controller.ts's own
+  // doc comment). `GET /ledger/entries/:ledgerEntryUuid` is Ch.19.11's
+  // mandatory drill-down to the originating Journal Entry. No new Aggregate,
+  // table, or Repository — every route reads the existing `LedgerEntry`
+  // Aggregate via `ILedgerRepository`/`IJournalEntryRepository`, per the
+  // frozen "General Ledger is a read model over LedgerEntry" decision.
+  router.get("/ledger", getLedgerController(deps));
+  router.get("/ledger/accounts/:accountUuid", getAccountLedgerController(deps));
+  router.get("/ledger/entries/:ledgerEntryUuid", getLedgerEntryController(deps));
 
   return router;
 }

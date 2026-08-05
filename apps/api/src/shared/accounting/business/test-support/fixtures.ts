@@ -233,6 +233,7 @@ export function createFakeJournalEntryRepository(): jest.Mocked<IJournalEntryRep
   return {
     createJournalEntry: jest.fn(),
     findJournalEntryByUuid: jest.fn(),
+    findJournalEntryByLineId: jest.fn(),
     listJournalEntries: jest.fn(),
     updateJournalEntry: jest.fn(),
     submitJournalEntryForApproval: jest.fn(),
@@ -250,6 +251,7 @@ export function createFakeLedgerRepository(): jest.Mocked<ILedgerRepository> {
     findLedgerEntryByUuid: jest.fn(),
     findLedgerEntryByJournalEntryLineId: jest.fn(),
     listLedgerEntries: jest.fn(),
+    sumLedgerEntriesBefore: jest.fn(),
   };
 }
 

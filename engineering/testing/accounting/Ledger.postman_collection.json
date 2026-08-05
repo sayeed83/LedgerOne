@@ -1,0 +1,1900 @@
+{
+  "info": {
+    "_postman_id": "d5e6f7a8-9b0c-4d1e-af2b-4c5d6e7f8a9b",
+    "name": "LedgerOne - Accounting (Ledger / General Ledger Read Model)",
+    "description": "General Ledger read-model submodule API collection (Get Account Ledger, Get Ledger by query, Get Ledger Entry drill-down). Reflects the implementation exactly as shipped in apps/api/src/shared/accounting \u2014 read-only, no create/update/delete endpoints exist for the Ledger at all (00_BUSINESS_RULES.md Ch.19.18: only the Journal Entry posting process may create Ledger Entries). Does not modify or duplicate FinancialYear/FiscalPeriod/ChartOfAccounts/JournalEntries.postman_collection.json \u2014 this collection creates its own Account Group/Account/Financial Year/Fiscal Period/Journal Entry fixtures as Setup steps, posting three Journal Entries to build a genuine three-row Ledger history (500, then +100, then +100) to page through.\n\nDesign note (JWT required): same convention as every other collection in this folder \u2014 every protected request carries `Authorization: Bearer {{accessToken}}`, the same long-lived (10-year) RS256 dev-only token for tenantId 900001 already used by FinancialYear/FiscalPeriod/ChartOfAccounts/Currency/Tax/JournalEntries.\n\nDesign note (repeatability): a collection-level pre-request script generates `{{lgYear}}` (base 8000, distinct from every other collection's own base/modulus sharing the same financial_years/accounts tables under the same companyUuid) once per Newman invocation, mirroring JournalEntries.postman_collection.json's own established trick.\n\nDesign note (cursor pagination, PAG-001..005): the 'Get Account Ledger' folder's three 'Page N of 3' requests chain a real, server-minted opaque cursor across three separate HTTP requests via `pm.collectionVariables` \u2014 this is the definitive proof that keyset pagination never skips or duplicates a row and that the running balance carries forward correctly across page boundaries (a bug in exactly this continuity was caught and fixed during this milestone's own live verification before this collection was finalized).\n\nDesign note (Ledger is read-only, structurally): no POST/PUT/PATCH/DELETE route exists anywhere under `/ledger` \u2014 there is nothing to test for those methods because Express itself has no such route registered (Ch.19.18), not merely a permission check.\n\nRun order for a full pass, top to bottom: every 'Setup' request must run first, in order, to seed fixture variables; every non-setup request depends on them. The three 'Page N of 3' requests within 'Get Account Ledger' must also run in order (each depends on the previous one's own `nextCursor`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request) \u2014 base 8000,",
+          "// distinct from FinancialYear (2030), FiscalPeriod (3000), Tax (3000/3400),",
+          "// and JournalEntries (6000/6600/7200), since all of these write into the",
+          "// same financial_years/accounts tables under the same companyUuid.",
+          "if (!pm.collectionVariables.get(\"lgYear\")) {",
+          "    const lgYear = 8000 + (Date.now() % 500);",
+          "    pm.collectionVariables.set(\"lgYear\", String(lgYear));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "900001",
+      "type": "string"
+    },
+    {
+      "key": "companyUuid",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    {
+      "key": "lgYear",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgAssetAccountGroupUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgRevenueAccountGroupUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgCashAccountUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgRevenueAccountUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgFinancialYearUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgFiscalPeriodUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgJournalEntry1Uuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgJournalEntry2Uuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgJournalEntry3Uuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgFirstLedgerEntryUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgLedgerCursorPage1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lgLedgerCursorPage2",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "Create Asset Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/account-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "account-groups"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"Ledger Assets {{lgYear}}\",\n  \"accountType\": \"ASSET\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgAssetAccountGroupUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Revenue Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/account-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "account-groups"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"Ledger Revenue {{lgYear}}\",\n  \"accountType\": \"REVENUE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgRevenueAccountGroupUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Cash Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"code\": \"LG-1000-{{lgYear}}\",\n  \"name\": \"Ledger Test Cash\",\n  \"accountType\": \"ASSET\",\n  \"accountGroupUuid\": \"{{lgAssetAccountGroupUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgCashAccountUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Revenue Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"code\": \"LG-4000-{{lgYear}}\",\n  \"name\": \"Ledger Test Sales Revenue\",\n  \"accountType\": \"REVENUE\",\n  \"accountGroupUuid\": \"{{lgRevenueAccountGroupUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgRevenueAccountUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Cash Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{lgCashAccountUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts",
+                "{{lgCashAccountUuid}}",
+                "activate"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Revenue Account (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{lgRevenueAccountUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts",
+                "{{lgRevenueAccountUuid}}",
+                "activate"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Financial Year (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"startDate\": \"{{lgYear}}-01-01\",\n  \"endDate\": \"{{lgYear}}-12-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgFinancialYearUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Financial Year (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{lgFinancialYearUuid}}/open",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{lgFinancialYearUuid}}",
+                "open"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fiscal Period (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "fiscal-periods"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"financialYearUuid\": \"{{lgFinancialYearUuid}}\",\n  \"startDate\": \"{{lgYear}}-01-01\",\n  \"endDate\": \"{{lgYear}}-01-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgFiscalPeriodUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Journal Entry 1 (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{lgYear}}-01-05\",\n  \"narration\": \"Ledger fixture cash sale 1\",\n  \"lines\": [\n    { \"accountUuid\": \"{{lgCashAccountUuid}}\", \"debitAmount\": \"500\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{lgRevenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"500\" }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgJournalEntry1Uuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post Journal Entry 1 (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{lgJournalEntry1Uuid}}/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries",
+                "{{lgJournalEntry1Uuid}}",
+                "post"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Status is POSTED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"POSTED\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Journal Entry 2 (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{lgYear}}-01-06\",\n  \"narration\": \"Ledger fixture cash sale 2\",\n  \"lines\": [\n    { \"accountUuid\": \"{{lgCashAccountUuid}}\", \"debitAmount\": \"100\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{lgRevenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"100\" }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgJournalEntry2Uuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post Journal Entry 2 (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{lgJournalEntry2Uuid}}/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries",
+                "{{lgJournalEntry2Uuid}}",
+                "post"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Status is POSTED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"POSTED\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Journal Entry 3 (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"postingDate\": \"{{lgYear}}-01-07\",\n  \"narration\": \"Ledger fixture cash sale 3\",\n  \"lines\": [\n    { \"accountUuid\": \"{{lgCashAccountUuid}}\", \"debitAmount\": \"100\", \"creditAmount\": \"0\" },\n    { \"accountUuid\": \"{{lgRevenueAccountUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"100\" }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"lgJournalEntry3Uuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post Journal Entry 3 (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{lgJournalEntry3Uuid}}/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries",
+                "{{lgJournalEntry3Uuid}}",
+                "post"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Status is POSTED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"POSTED\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Capture First Ledger Entry Uuid (Setup)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?pageSize=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "pageSize",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"lgFirstLedgerEntryUuid\", body.data.entries[0].uuid);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Get Account Ledger",
+      "item": [
+        {
+          "name": "Get Account Ledger - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () { pm.response.to.have.status(401); });",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () { pm.expect(pm.response.json().error.code).to.eql(\"AUTH_MISSING_TOKEN\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Validation Error (Malformed accountUuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "not-a-uuid"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Validation Error (Malformed dateFrom)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?dateFrom=not-a-date",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "dateFrom",
+                  "value": "not-a-date"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Not Found (Unknown Account)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+                  "pm.test(\"Error code is ACC_ACCOUNT_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_ACCOUNT_NOT_FOUND\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Invalid Date Range (dateFrom after dateTo)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?dateFrom={{lgYear}}-06-01&dateTo={{lgYear}}-01-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "dateFrom",
+                  "value": "{{lgYear}}-06-01"
+                },
+                {
+                  "key": "dateTo",
+                  "value": "{{lgYear}}-01-01"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is ACC_INVALID_LEDGER_DATE_RANGE\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_LEDGER_DATE_RANGE\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Invalid Cursor",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?cursor=not-a-real-cursor",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "cursor",
+                  "value": "not-a-real-cursor"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is ACC_INVALID_LEDGER_CURSOR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_LEDGER_CURSOR\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Success (Full History, Running Balance, No Field Leakage)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"account identity matches the fixture Cash Account\", function () {",
+                  "    pm.expect(body.data.account.uuid).to.eql(pm.collectionVariables.get(\"lgCashAccountUuid\"));",
+                  "    pm.expect(body.data.account.accountType).to.eql(\"ASSET\");",
+                  "});",
+                  "pm.test(\"openingBalance is 0 for an unbounded first page (account inception)\", function () {",
+                  "    pm.expect(body.data.openingBalance).to.eql(\"0\");",
+                  "});",
+                  "pm.test(\"running balance accumulates correctly across all three fixture entries (500, 600, 700)\", function () {",
+                  "    pm.expect(body.data.entries.map(e => e.runningBalance)).to.eql([\"500\", \"600\", \"700\"]);",
+                  "});",
+                  "pm.test(\"closingBalance equals the last entrys runningBalance\", function () {",
+                  "    pm.expect(body.data.closingBalance).to.eql(\"700\");",
+                  "});",
+                  "pm.test(\"pagination meta reports no further page\", function () {",
+                  "    pm.expect(body.meta.pagination.hasMore).to.eql(false);",
+                  "    pm.expect(body.meta.pagination.nextCursor).to.eql(null);",
+                  "});",
+                  "pm.test(\"never leaks id/tenantId/accountId/journalEntryLineId/createdBy\", function () {",
+                  "    const raw = JSON.stringify(body);",
+                  "    [\"\\\"id\\\"\", \"\\\"tenantId\\\"\", \"\\\"accountId\\\"\", \"\\\"journalEntryLineId\\\"\", \"\\\"createdBy\\\"\"].forEach((field) => {",
+                  "        pm.expect(raw).to.not.include(field);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - dateFrom Excludes Earlier Entries (Opening Balance Reflects Them)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?dateFrom={{lgYear}}-01-06",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "dateFrom",
+                  "value": "{{lgYear}}-01-06"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"openingBalance folds in the excluded first entry (500)\", function () {",
+                  "    pm.expect(body.data.openingBalance).to.eql(\"500\");",
+                  "});",
+                  "pm.test(\"only the two later entries are returned, continuing the running balance\", function () {",
+                  "    pm.expect(body.data.entries.map(e => e.runningBalance)).to.eql([\"600\", \"700\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Page 1 of 3 (pageSize=1, Cursor Pagination)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?pageSize=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "pageSize",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns exactly one entry with limit=1 and hasMore=true\", function () {",
+                  "    pm.expect(body.data.entries.length).to.eql(1);",
+                  "    pm.expect(body.meta.pagination.limit).to.eql(1);",
+                  "    pm.expect(body.meta.pagination.hasMore).to.eql(true);",
+                  "});",
+                  "pm.test(\"nextCursor is an opaque token, not the raw entryDate/uuid (PAG-003)\", function () {",
+                  "    const cursor = body.meta.pagination.nextCursor;",
+                  "    pm.expect(cursor).to.not.eql(null);",
+                  "    pm.expect(cursor).to.not.include(pm.collectionVariables.get(\"lgYear\"));",
+                  "});",
+                  "pm.test(\"first page running balance is 500\", function () {",
+                  "    pm.expect(body.data.entries[0].runningBalance).to.eql(\"500\");",
+                  "});",
+                  "pm.collectionVariables.set(\"lgLedgerCursorPage1\", body.meta.pagination.nextCursor);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Page 2 of 3 (Resumes via Cursor, Balance Continues)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?pageSize=1&cursor={{lgLedgerCursorPage1}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "pageSize",
+                  "value": "1"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{lgLedgerCursorPage1}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"opening balance for page 2 equals page 1 own closing balance (500), the cursor row amount is not dropped\", function () {",
+                  "    pm.expect(body.data.openingBalance).to.eql(\"500\");",
+                  "});",
+                  "pm.test(\"running balance continues to 600, not restarting or double-counting\", function () {",
+                  "    pm.expect(body.data.entries[0].runningBalance).to.eql(\"600\");",
+                  "});",
+                  "pm.test(\"hasMore is still true (one more page remains)\", function () { pm.expect(body.meta.pagination.hasMore).to.eql(true); });",
+                  "pm.collectionVariables.set(\"lgLedgerCursorPage2\", body.meta.pagination.nextCursor);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Page 3 of 3 (Final Page, No Skips/Duplicates)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?pageSize=1&cursor={{lgLedgerCursorPage2}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "pageSize",
+                  "value": "1"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{lgLedgerCursorPage2}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"final page reaches the true closing balance of 700\", function () {",
+                  "    pm.expect(body.data.entries[0].runningBalance).to.eql(\"700\");",
+                  "    pm.expect(body.data.closingBalance).to.eql(\"700\");",
+                  "});",
+                  "pm.test(\"hasMore is now false, nextCursor is null (no fourth page)\", function () {",
+                  "    pm.expect(body.meta.pagination.hasMore).to.eql(false);",
+                  "    pm.expect(body.meta.pagination.nextCursor).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Page Size Clamped to Maximum (PAG-004)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?pageSize=5000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "pageSize",
+                  "value": "5000"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"limit clamped down to 100, request not rejected\", function () { pm.expect(pm.response.json().meta.pagination.limit).to.eql(100); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Ledger - Filtered by companyUuid",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/accounts/{{lgCashAccountUuid}}?companyUuid={{companyUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "accounts",
+                "{{lgCashAccountUuid}}"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{companyUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"still returns the full fixture history when companyUuid matches\", function () { pm.expect(pm.response.json().data.entries.length).to.eql(3); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Get Ledger",
+      "item": [
+        {
+          "name": "Get Ledger - Validation Error (Missing accountUuid, Ch.19.1)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Ledger - Success (Query-Param accountUuid, Same Operation as the Path Route)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger?accountUuid={{lgCashAccountUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger"
+              ],
+              "query": [
+                {
+                  "key": "accountUuid",
+                  "value": "{{lgCashAccountUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns the same Account Ledger as GET /ledger/accounts/:accountUuid\", function () {",
+                  "    pm.expect(body.data.account.uuid).to.eql(pm.collectionVariables.get(\"lgCashAccountUuid\"));",
+                  "    pm.expect(body.data.closingBalance).to.eql(\"700\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Get Ledger Entry",
+      "item": [
+        {
+          "name": "Get Ledger Entry - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/entries/{{lgFirstLedgerEntryUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "entries",
+                "{{lgFirstLedgerEntryUuid}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () { pm.response.to.have.status(401); });",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () { pm.expect(pm.response.json().error.code).to.eql(\"AUTH_MISSING_TOKEN\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Ledger Entry - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/entries/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "entries",
+                "not-a-uuid"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Ledger Entry - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/entries/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "entries",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+                  "pm.test(\"Error code is ACC_LEDGER_ENTRY_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_LEDGER_ENTRY_NOT_FOUND\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Ledger Entry - Success (Drill-Down to Originating Journal Entry, Ch.19.11)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/ledger/entries/{{lgFirstLedgerEntryUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "ledger",
+                "entries",
+                "{{lgFirstLedgerEntryUuid}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns the Ledger Entrys own amounts\", function () {",
+                  "    pm.expect(body.data.uuid).to.eql(pm.collectionVariables.get(\"lgFirstLedgerEntryUuid\"));",
+                  "    pm.expect(body.data.debitAmount).to.eql(\"500\");",
+                  "    pm.expect(body.data.creditAmount).to.eql(\"0\");",
+                  "});",
+                  "pm.test(\"drill-down resolves the originating, Posted Journal Entry\", function () {",
+                  "    pm.expect(body.data.journalEntry.uuid).to.eql(pm.collectionVariables.get(\"lgJournalEntry1Uuid\"));",
+                  "    pm.expect(body.data.journalEntry.status).to.eql(\"POSTED\");",
+                  "    pm.expect(body.data.journalEntry.narration).to.eql(\"Ledger fixture cash sale 1\");",
+                  "});",
+                  "pm.test(\"never leaks accountId/journalEntryLineId/tenantId\", function () {",
+                  "    const raw = JSON.stringify(body);",
+                  "    [\"\\\"accountId\\\"\", \"\\\"journalEntryLineId\\\"\", \"\\\"tenantId\\\"\"].forEach((field) => {",
+                  "        pm.expect(raw).to.not.include(field);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

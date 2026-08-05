@@ -15,7 +15,14 @@ import { LedgerEntry as LedgerEntryModel, Prisma } from "../../../database/gener
 import { LedgerEntry, CreateLedgerEntryProps } from "../domain/entities/ledger-entry.entity";
 import { DecimalValue } from "../domain/value-objects/decimal-value.value-object";
 import { DuplicateLedgerEntryForJournalEntryLineError } from "../domain/errors/accounting.errors";
-import { ILedgerRepository, RepositoryTransaction } from "../domain/interfaces/ledger-repository.interface";
+import {
+  ILedgerRepository,
+  RepositoryTransaction,
+  ListLedgerEntriesFilter,
+  ListLedgerEntriesResult,
+  LedgerEntryPosition,
+  LedgerEntrySumBefore,
+} from "../domain/interfaces/ledger-repository.interface";
 
 /** Prisma's unique-constraint violation code (P2002) — used to translate a raw DB conflict on `ledger_entries.journal_entry_line_id` into a typed Domain error, mirroring `createExchangeRate`'s identical translation pattern for its own uniqueness constraint. */
 const UNIQUE_CONSTRAINT_VIOLATION = "P2002";
@@ -92,11 +99,86 @@ export class PrismaLedgerRepository implements ILedgerRepository {
     return row ? toLedgerEntryDomain(row) : null;
   }
 
-  async listLedgerEntries(tenantId: bigint, accountId?: bigint): Promise<LedgerEntry[]> {
+  // Canonical Ledger ordering (`entryDate` ascending, `uuid` ascending as the
+  // stable tie-breaker) — see `LedgerEntryPosition`'s own doc comment for
+  // why. Both methods below share the identical "position" predicate
+  // builder so the pagination cursor and the opening-balance boundary can
+  // never drift apart into two different orderings.
+  async listLedgerEntries(tenantId: bigint, filter: ListLedgerEntriesFilter): Promise<ListLedgerEntriesResult> {
+    const { accountId, companyUuid, dateFrom, dateTo, cursor, limit } = filter;
     const rows = await prisma.ledgerEntry.findMany({
-      where: { tenantId, accountId },
-      orderBy: { entryDate: "asc" },
+      where: {
+        AND: [
+          {
+            tenantId,
+            accountId,
+            companyUuid,
+            entryDate: dateFrom || dateTo ? { gte: dateFrom, lte: dateTo } : undefined,
+          },
+          cursor ? afterPositionWhere(cursor) : {},
+        ],
+      },
+      orderBy: [{ entryDate: "asc" }, { uuid: "asc" }],
+      // One extra row fetched, never returned (PAG-005 `hasMore`) — sliced
+      // off below, never exposed to the caller.
+      take: limit + 1,
     });
-    return rows.map(toLedgerEntryDomain);
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return { entries: page.map(toLedgerEntryDomain), hasMore };
   }
+
+  async sumLedgerEntriesBefore(
+    tenantId: bigint,
+    accountId: bigint,
+    companyUuid: string | undefined,
+    position?: LedgerEntryPosition,
+  ): Promise<LedgerEntrySumBefore> {
+    const result = await prisma.ledgerEntry.aggregate({
+      where: {
+        AND: [{ tenantId, accountId, companyUuid }, position ? beforePositionWhere(position) : {}],
+      },
+      _sum: { debitAmount: true, creditAmount: true },
+    });
+    return {
+      totalDebit: (result._sum.debitAmount ?? new Prisma.Decimal(0)).toFixed(),
+      totalCredit: (result._sum.creditAmount ?? new Prisma.Decimal(0)).toFixed(),
+    };
+  }
+}
+
+/** Keyset predicate for "strictly AFTER `position`" (the next page) — `(entryDate > x) OR (entryDate = x AND uuid > y)`, matching the `[{entryDate:"asc"},{uuid:"asc"}]` ordering exactly so pagination never skips or duplicates a row. */
+function afterPositionWhere(position: LedgerEntryPosition): Prisma.LedgerEntryWhereInput {
+  return {
+    OR: [{ entryDate: { gt: position.entryDate } }, { entryDate: position.entryDate, uuid: { gt: position.uuid } }],
+  };
+}
+
+/**
+ * The opening-balance boundary predicate for `sumLedgerEntriesBefore` —
+ * NOT symmetric with `afterPositionWhere`'s strict "greater than", by
+ * design, because the two callers mean different things by "position":
+ *   - `uuid` omitted: `position` is a plain `dateFrom` threshold (no
+ *     specific row) — sum everything strictly BEFORE that date
+ *     (`entryDate < x`), since `dateFrom` itself is the page's own
+ *     inclusive lower bound and must not be double-counted into the
+ *     opening balance.
+ *   - `uuid` present: `position` is a pagination cursor — the LAST row
+ *     already returned on the PRIOR page. That row's own debit/credit MUST
+ *     be folded into the carried-forward balance (it already contributed
+ *     to that page's own closing balance), so the tie-break at
+ *     `entryDate = x` uses `uuid <= y` (inclusive), not `<` — otherwise the
+ *     cursor row's own amount would be silently dropped from every
+ *     subsequent page's running balance the first time this function was
+ *     written (caught during this milestone's own live verification, fixed
+ *     before merge, not a guess).
+ */
+function beforePositionWhere(position: LedgerEntryPosition): Prisma.LedgerEntryWhereInput {
+  if (position.uuid === undefined) {
+    return { entryDate: { lt: position.entryDate } };
+  }
+  const uuid = position.uuid;
+  return {
+    OR: [{ entryDate: { lt: position.entryDate } }, { entryDate: position.entryDate, uuid: { lte: uuid } }],
+  };
 }

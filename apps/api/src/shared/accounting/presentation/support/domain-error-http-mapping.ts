@@ -53,6 +53,8 @@ import {
   AccountNotPostableError,
   JournalEntryNotEditableError,
   NoFiscalPeriodForPostingDateError,
+  InvalidLedgerCursorError,
+  InvalidLedgerDateRangeError,
 } from "../../business/accounting-errors";
 
 export interface HttpErrorMapping {
@@ -195,6 +197,12 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof NoFiscalPeriodForPostingDateError) {
     return { status: 422, code: "ACC_NO_FISCAL_PERIOD_FOR_POSTING_DATE" };
+  }
+  if (error instanceof InvalidLedgerCursorError) {
+    return { status: 422, code: "ACC_INVALID_LEDGER_CURSOR" };
+  }
+  if (error instanceof InvalidLedgerDateRangeError) {
+    return { status: 422, code: "ACC_INVALID_LEDGER_DATE_RANGE" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

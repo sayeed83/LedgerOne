@@ -24,8 +24,13 @@ import {
   buildTaxRule,
   buildAccountGroup,
   buildAccount,
+  buildLedgerEntry,
+  buildJournalEntry,
   createFakeAccountingRepository,
+  createFakeJournalEntryRepository,
+  createFakeLedgerRepository,
 } from "../../../src/shared/accounting/business/test-support/fixtures";
+import { encodeLedgerCursor } from "../../../src/shared/accounting/business/ledger-cursor";
 
 function buildApp(deps: AccountingDependencies) {
   const app = express();
@@ -35,7 +40,11 @@ function buildApp(deps: AccountingDependencies) {
 }
 
 function buildDeps(): AccountingDependencies {
-  return { repository: createFakeAccountingRepository() };
+  return {
+    repository: createFakeAccountingRepository(),
+    journalEntryRepository: createFakeJournalEntryRepository(),
+    ledgerRepository: createFakeLedgerRepository(),
+  };
 }
 
 const TENANT_HEADER = "1";
@@ -2137,6 +2146,264 @@ describe("Accounting routes", () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe("ACC_ACCOUNT_NOT_FOUND");
+    });
+  });
+
+  describe("GET /api/v1/accounting/ledger/accounts/:accountUuid", () => {
+    function mockZeroSum(deps: AccountingDependencies) {
+      (deps.ledgerRepository.sumLedgerEntriesBefore as jest.Mock).mockResolvedValue({ totalDebit: "0", totalCredit: "0" });
+    }
+
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps)).get(`/api/v1/accounting/ledger/accounts/${buildAccount().uuid}`);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 on a malformed accountUuid path param", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/ledger/accounts/not-a-uuid")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 on a malformed dateFrom/dateTo query value", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${buildAccount().uuid}?dateFrom=not-a-date`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 404 when the Account does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${buildAccount().uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_NOT_FOUND");
+    });
+
+    it("returns 422 when dateFrom is after dateTo", async () => {
+      const deps = buildDeps();
+      const account = buildAccount();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${account.uuid}?dateFrom=2026-06-01&dateTo=2026-01-01`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_INVALID_LEDGER_DATE_RANGE");
+    });
+
+    it("accepts a valid, previously-encoded cursor and forwards its decoded position to the Repository", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ id: 5n });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      (deps.ledgerRepository.sumLedgerEntriesBefore as jest.Mock).mockResolvedValue({ totalDebit: "0", totalCredit: "0" });
+      (deps.ledgerRepository.listLedgerEntries as jest.Mock).mockResolvedValue({ entries: [], hasMore: false });
+      const position = { entryDate: new Date("2026-04-10T00:00:00.000Z"), uuid: "00000000-0000-0000-0000-000000000905" };
+      const cursor = encodeLedgerCursor(position);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${account.uuid}?cursor=${encodeURIComponent(cursor)}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(deps.ledgerRepository.listLedgerEntries).toHaveBeenCalledWith(
+        BigInt(TENANT_HEADER),
+        expect.objectContaining({ cursor: position }),
+      );
+    });
+
+    it("returns 422 for an undecodable cursor", async () => {
+      const deps = buildDeps();
+      const account = buildAccount();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${account.uuid}?cursor=not-a-real-cursor`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_INVALID_LEDGER_CURSOR");
+    });
+
+    it("returns 200 with the Account's Ledger, running balances, opening/closing balance, and pagination meta — never id/tenantId/accountId/journalEntryLineId/createdBy", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ uuid: "00000000-0000-0000-0000-000000000700", id: 5n, accountType: AccountType.Asset, code: "1000", name: "Cash" });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      (deps.ledgerRepository.sumLedgerEntriesBefore as jest.Mock).mockResolvedValue({ totalDebit: "1000", totalCredit: "0" });
+      const entries = [
+        buildLedgerEntry({ uuid: "entry-1", debitAmount: DecimalValue.create("100"), creditAmount: DecimalValue.create("0") }),
+        buildLedgerEntry({ uuid: "entry-2", debitAmount: DecimalValue.create("0"), creditAmount: DecimalValue.create("40") }),
+      ];
+      (deps.ledgerRepository.listLedgerEntries as jest.Mock).mockResolvedValue({ entries, hasMore: false });
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${account.uuid}?dateFrom=2026-04-01`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.account).toEqual({ uuid: "00000000-0000-0000-0000-000000000700", companyUuid: COMPANY_UUID, code: "1000", name: "Cash", accountType: "ASSET" });
+      expect(res.body.data.openingBalance).toBe("1000");
+      expect(res.body.data.closingBalance).toBe("1060");
+      expect(res.body.data.entries).toEqual([
+        { uuid: "entry-1", entryDate: entries[0].entryDate.toISOString(), debitAmount: "100", creditAmount: "0", runningBalance: "1100" },
+        { uuid: "entry-2", entryDate: entries[1].entryDate.toISOString(), debitAmount: "0", creditAmount: "40", runningBalance: "1060" },
+      ]);
+      expect(res.body.meta.pagination).toEqual({ limit: 25, nextCursor: null, hasMore: false });
+      const raw = JSON.stringify(res.body);
+      expect(raw).not.toContain('"id"');
+      expect(raw).not.toContain('"tenantId"');
+      expect(raw).not.toContain('"accountId"');
+      expect(raw).not.toContain('"journalEntryLineId"');
+      expect(raw).not.toContain('"createdBy"');
+    });
+
+    it("returns an opening balance of zero, without calling sumLedgerEntriesBefore, on a truly unbounded first page (no dateFrom, no cursor)", async () => {
+      const deps = buildDeps();
+      const account = buildAccount();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      const entry = buildLedgerEntry({ uuid: "entry-1", debitAmount: DecimalValue.create("100"), creditAmount: DecimalValue.create("0") });
+      (deps.ledgerRepository.listLedgerEntries as jest.Mock).mockResolvedValue({ entries: [entry], hasMore: false });
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${account.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.openingBalance).toBe("0");
+      expect(res.body.data.entries[0].runningBalance).toBe("100");
+      expect(deps.ledgerRepository.sumLedgerEntriesBefore).not.toHaveBeenCalled();
+    });
+
+    it("returns a non-null nextCursor when a further page exists", async () => {
+      const deps = buildDeps();
+      const account = buildAccount();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      mockZeroSum(deps);
+      (deps.ledgerRepository.listLedgerEntries as jest.Mock).mockResolvedValue({
+        entries: [buildLedgerEntry({ uuid: "entry-1" })],
+        hasMore: true,
+      });
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${account.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.meta.pagination.hasMore).toBe(true);
+      expect(res.body.meta.pagination.nextCursor).not.toBeNull();
+    });
+
+    it("clamps a pageSize above the maximum down to 100 (PAG-004)", async () => {
+      const deps = buildDeps();
+      const account = buildAccount();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      mockZeroSum(deps);
+      (deps.ledgerRepository.listLedgerEntries as jest.Mock).mockResolvedValue({ entries: [], hasMore: false });
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/accounts/${account.uuid}?pageSize=5000`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.meta.pagination.limit).toBe(100);
+    });
+  });
+
+  describe("GET /api/v1/accounting/ledger", () => {
+    it("returns 422 when accountUuid is missing (Ch.19.1 — a Ledger is always per-account)", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps)).get("/api/v1/accounting/ledger").set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 200, behaving identically to the path-based route, when accountUuid is supplied as a query param", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ uuid: "00000000-0000-0000-0000-000000000700" });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      (deps.ledgerRepository.sumLedgerEntriesBefore as jest.Mock).mockResolvedValue({ totalDebit: "0", totalCredit: "0" });
+      (deps.ledgerRepository.listLedgerEntries as jest.Mock).mockResolvedValue({ entries: [], hasMore: false });
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger?accountUuid=${account.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.account.uuid).toBe("00000000-0000-0000-0000-000000000700");
+      expect(deps.repository.findAccountByUuid).toHaveBeenCalledWith(BigInt(TENANT_HEADER), "00000000-0000-0000-0000-000000000700");
+    });
+  });
+
+  describe("GET /api/v1/accounting/ledger/entries/:ledgerEntryUuid", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps)).get("/api/v1/accounting/ledger/entries/00000000-0000-0000-0000-000000000900");
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 on a malformed ledgerEntryUuid", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/ledger/entries/not-a-uuid")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 404 when the Ledger Entry does not exist", async () => {
+      const deps = buildDeps();
+      (deps.ledgerRepository.findLedgerEntryByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/ledger/entries/00000000-0000-0000-0000-000000000900")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_LEDGER_ENTRY_NOT_FOUND");
+    });
+
+    it("returns 200 with the Ledger Entry and its drill-down Journal Entry (Ch.19.11) — never accountId/journalEntryLineId/tenantId", async () => {
+      const deps = buildDeps();
+      const ledgerEntryUuid = "00000000-0000-0000-0000-000000000901";
+      const journalEntryUuid = "00000000-0000-0000-0000-000000000902";
+      const ledgerEntry = buildLedgerEntry({ uuid: ledgerEntryUuid, journalEntryLineId: 42n });
+      const journalEntry = buildJournalEntry({ uuid: journalEntryUuid });
+      (deps.ledgerRepository.findLedgerEntryByUuid as jest.Mock).mockResolvedValue(ledgerEntry);
+      (deps.journalEntryRepository.findJournalEntryByLineId as jest.Mock).mockResolvedValue(journalEntry);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/ledger/entries/${ledgerEntryUuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.uuid).toBe(ledgerEntryUuid);
+      expect(res.body.data.debitAmount).toBe(ledgerEntry.debitAmount.toString());
+      expect(res.body.data.journalEntry.uuid).toBe(journalEntryUuid);
+      expect(res.body.data.journalEntry.status).toBe(journalEntry.status);
+      expect(deps.journalEntryRepository.findJournalEntryByLineId).toHaveBeenCalledWith(BigInt(TENANT_HEADER), 42n);
+      const raw = JSON.stringify(res.body);
+      expect(raw).not.toContain('"accountId"');
+      expect(raw).not.toContain('"journalEntryLineId"');
+      expect(raw).not.toContain('"tenantId"');
     });
   });
 });

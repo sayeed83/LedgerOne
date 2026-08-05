@@ -380,3 +380,17 @@ export class DuplicateAccountCodeError extends DomainError {
     super(`Account code '${code}' already exists for Company '${companyUuid}'.`);
   }
 }
+
+/** Raised by the General Ledger read model's `getAccountLedger`/`getLedger` use cases when a client-supplied `cursor` query param cannot be decoded into a well-formed `{entryDate, uuid}` position (07_REST_API_STANDARDS.md PAG-003 — "opaque... clients must not decode or construct cursors themselves"; this is the server rejecting a cursor it did not itself mint, not a business rule). */
+export class InvalidLedgerCursorError extends DomainError {
+  constructor(public readonly cursor: string) {
+    super(`Ledger cursor '${cursor}' is not a valid cursor.`);
+  }
+}
+
+/** Raised by the General Ledger read model when a supplied `dateFrom` is later than `dateTo` — the minimum structural invariant a date "range" implies, mirroring `InvalidTaxRuleEffectiveDateRangeError`'s identical reasoning (not literal Ch.19/24 text). */
+export class InvalidLedgerDateRangeError extends DomainError {
+  constructor(public readonly dateFrom: Date, public readonly dateTo: Date) {
+    super(`Ledger dateFrom '${dateFrom.toISOString()}' must not be later than dateTo '${dateTo.toISOString()}'.`);
+  }
+}

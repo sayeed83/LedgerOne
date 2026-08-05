@@ -44,6 +44,21 @@ export interface IJournalEntryRepository {
   createJournalEntry(tenantId: bigint, props: CreateJournalEntryProps, tx?: RepositoryTransaction): Promise<JournalEntry>;
   /** Loads the Aggregate Root together with its lines (Ch.7.3.3 — they are always loaded/persisted together, never a line independent of its parent). */
   findJournalEntryByUuid(tenantId: bigint, uuid: string): Promise<JournalEntry | null>;
+  /**
+   * Loads the Aggregate Root that owns a given Journal Entry Line's internal
+   * `id` — added by the Ledger Read Model (General Ledger) milestone
+   * specifically to serve `LedgerEntry.journalEntryLineId` drill-down
+   * (00_BUSINESS_RULES.md Ch.19.11 — "drill into any Ledger entry to see the
+   * originating Journal Entry... that created it"; Ch.82.7 OPR-002 makes
+   * this drill-down mandatory for any Operational Report). A `LedgerEntry`
+   * carries only the line's internal `id`, never the parent Journal Entry's
+   * `uuid` (LDG-002 immutability — it is a pure denormalized mirror,
+   * deliberately minimal), so no existing method on this interface can
+   * answer "which Journal Entry produced this Ledger Entry" without this
+   * addition. The smallest possible extension: one more `findBy*` lookup, no
+   * change to any existing method's signature or behavior.
+   */
+  findJournalEntryByLineId(tenantId: bigint, journalEntryLineId: bigint): Promise<JournalEntry | null>;
   /** Optionally narrowed to a single Company (FK-002 `companyUuid`) and/or a single lifecycle status; any/all may be omitted, returning every Journal Entry for the Tenant. Each entry is returned with its lines, mirroring `findJournalEntryByUuid`. Ordered by `postingDate` descending. */
   listJournalEntries(tenantId: bigint, companyUuid?: string, status?: JournalEntryStatus): Promise<JournalEntry[]>;
   /** Revises `postingDate`/`narration` on an existing Journal Entry row. Restricting this to the Draft state (JRN-003's posted-immutability) is a Business-layer concern, not enforced here. */

@@ -49,6 +49,16 @@ import { InvalidDecimalValueError } from "../errors/accounting.errors";
 // explicitly valid, per Ch.67.11's "Zero Rate" Tax Group example — reusing
 // the stricter `isPositive()` would wrongly reject it), and this is that
 // validation's actual first real caller (business/create-tax-rule.service.ts).
+// `add`/`subtract` are a third addition, again usage-justified rather than
+// speculative: 00_BUSINESS_RULES.md Ch.19.7 LDG-003 requires a Ledger
+// running balance to be computed as "the sum of all its Ledger entries to
+// date," and Ch.19.3 says that sum is "owned" (i.e. computed, never stored)
+// by the Ledger itself — `business/calculate-running-balance.service.ts` is
+// this exact, real first caller. Implemented via `BigInt` on a
+// decimal-point-shifted integer representation (never `Number`/floating
+// point, per this file's own header rationale) so addition stays exact
+// regardless of either operand's scale — still no third-party
+// arbitrary-precision library, consistent with the frozen tech stack.
 export class DecimalValue {
   private constructor(private readonly value: string) {}
 
@@ -79,6 +89,16 @@ export class DecimalValue {
   isNegative(): boolean {
     return this.value.startsWith("-");
   }
+
+  /** Exact decimal addition (Ch.19.7 LDG-003's running-balance summation) — never `Number`, see class-level doc comment. */
+  add(other: DecimalValue): DecimalValue {
+    return new DecimalValue(addDecimalStrings(this.value, other.value));
+  }
+
+  /** Exact decimal subtraction, implemented as `add` of the negated operand — this Value Object's normal-balance net-movement calculation (Ch.16 DBL-003) needs both directions. */
+  subtract(other: DecimalValue): DecimalValue {
+    return new DecimalValue(addDecimalStrings(this.value, negateDecimalString(other.value)));
+  }
 }
 
 const DECIMAL_PATTERN = /^-?\d+(\.\d+)?$/;
@@ -94,4 +114,41 @@ function normalize(raw: string): string {
   const isZero = trimmedWhole === "0" && trimmedFraction === "";
   const sign = negative && !isZero ? "-" : "";
   return `${sign}${trimmedWhole}${trimmedFraction ? `.${trimmedFraction}` : ""}`;
+}
+
+function negateDecimalString(value: string): string {
+  if (value === "0") return value;
+  return value.startsWith("-") ? value.slice(1) : `-${value}`;
+}
+
+/** Adds two already-well-formed decimal strings exactly, via `BigInt` on a common integer scale (shift both to the wider operand's decimal-place count, add as integers, shift back) — no floating point at any step. */
+function addDecimalStrings(a: string, b: string): string {
+  const scale = Math.max(fractionalDigits(a), fractionalDigits(b));
+  const scaledA = toScaledBigInt(a, scale);
+  const scaledB = toScaledBigInt(b, scale);
+  const sum = scaledA + scaledB;
+  return fromScaledBigInt(sum, scale);
+}
+
+function fractionalDigits(value: string): number {
+  const dotIndex = value.indexOf(".");
+  return dotIndex === -1 ? 0 : value.length - dotIndex - 1;
+}
+
+function toScaledBigInt(value: string, scale: number): bigint {
+  const negative = value.startsWith("-");
+  const unsigned = negative ? value.slice(1) : value;
+  const [wholePart, fractionalPart = ""] = unsigned.split(".");
+  const paddedFraction = fractionalPart.padEnd(scale, "0");
+  const magnitude = BigInt(`${wholePart}${paddedFraction}` || "0");
+  return negative ? -magnitude : magnitude;
+}
+
+function fromScaledBigInt(scaled: bigint, scale: number): string {
+  const negative = scaled < 0n;
+  const digits = (negative ? -scaled : scaled).toString().padStart(scale + 1, "0");
+  const wholePart = digits.slice(0, digits.length - scale) || "0";
+  const fractionalPart = scale > 0 ? digits.slice(digits.length - scale) : "";
+  const raw = fractionalPart ? `${wholePart}.${fractionalPart}` : wholePart;
+  return normalize(negative ? `-${raw}` : raw);
 }

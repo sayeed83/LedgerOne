@@ -140,6 +140,15 @@ export class PrismaJournalEntryRepository implements IJournalEntryRepository {
     return row ? toJournalEntryDomain(row) : null;
   }
 
+  /** See the interface's own doc comment (added by the Ledger Read Model milestone for Ch.19.11 drill-down). `lines.some({id: ...})` mirrors `addJournalEntryLine`'s parent-lookup style, filtered to non-soft-deleted lines like `WITH_LINES` itself. */
+  async findJournalEntryByLineId(tenantId: bigint, journalEntryLineId: bigint): Promise<JournalEntry | null> {
+    const row = await prisma.journalEntry.findFirst({
+      where: { tenantId, deletedAt: null, lines: { some: { id: journalEntryLineId, deletedAt: null } } },
+      ...WITH_LINES,
+    });
+    return row ? toJournalEntryDomain(row) : null;
+  }
+
   async listJournalEntries(
     tenantId: bigint,
     companyUuid?: string,
