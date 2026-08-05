@@ -230,3 +230,56 @@ export class InvalidTaxRateValueError extends DomainError {
     super(`Tax Rule rate '${rate}' must be a non-negative percentage.`);
   }
 }
+
+/** Raised by `createAccountGroup`/`updateAccountGroup` when an Account Group with the same name already exists for the Company (excluding the row being updated itself). Not explicit Ch.18 business-rule text — enforced here as a direct consequence of the same Repository-layer uniqueness reasoning as `DuplicateTaxGroupNameError`, mirroring its identical duplicate-name-within-company check. */
+export class DuplicateAccountGroupNameError extends DomainError {
+  constructor(public readonly companyUuid: string, public readonly accountGroupName: string) {
+    super(`Account Group '${accountGroupName}' already exists for Company '${companyUuid}'.`);
+  }
+}
+
+/** Raised by `createAccountGroup`/`updateAccountGroup` when a supplied parent Account Group's `accountType` does not equal the (new or existing) group's own `accountType` (00_BUSINESS_RULES.md Ch.18.7 AGP-003 — nesting must preserve a consistent classification down the tree). */
+export class AccountGroupTypeMismatchError extends DomainError {
+  constructor(
+    public readonly parentAccountGroupUuid: string,
+    public readonly parentAccountType: string,
+    public readonly childAccountType: string,
+  ) {
+    super(
+      `Account Group's accountType '${childAccountType}' must match its parent Account Group '${parentAccountGroupUuid}''s accountType '${parentAccountType}'.`,
+    );
+  }
+}
+
+/** Raised by `createAccount`/`updateAccount` when the target Account Group's `accountType` does not equal the Account's own `accountType` (00_BUSINESS_RULES.md Ch.18.7 AGP-002 — an Account Group's type must match every Account assigned to it). */
+export class AccountGroupAssignmentTypeMismatchError extends DomainError {
+  constructor(
+    public readonly accountGroupUuid: string,
+    public readonly accountGroupType: string,
+    public readonly accountType: string,
+  ) {
+    super(
+      `Account's accountType '${accountType}' must match Account Group '${accountGroupUuid}''s accountType '${accountGroupType}'.`,
+    );
+  }
+}
+
+/** Raised by `createAccount`/`updateAccount` when a supplied parent Account's `accountType` does not equal the child Account's own `accountType` (00_BUSINESS_RULES.md Ch.17.7 COA-002 — parent/child Accounts must share the same classification). */
+export class AccountTypeMismatchError extends DomainError {
+  constructor(
+    public readonly parentAccountUuid: string,
+    public readonly parentAccountType: string,
+    public readonly childAccountType: string,
+  ) {
+    super(
+      `Account's accountType '${childAccountType}' must match its parent Account '${parentAccountUuid}''s accountType '${parentAccountType}'.`,
+    );
+  }
+}
+
+/** Raised by `createAccount` when an Account with the same `code` already exists for the Company — regardless of that other Account's current status, including soft-deleted/deactivated (00_BUSINESS_RULES.md Ch.17.7 COA-004 — a `code` is a never-reused identity; `accounts.code` has no `deletedAt`-scoped uniqueness composite, a deliberate never-reuse decision mirroring `DuplicateCurrencyIsoCodeError`'s identical reasoning). */
+export class DuplicateAccountCodeError extends DomainError {
+  constructor(public readonly companyUuid: string, public readonly code: string) {
+    super(`Account code '${code}' already exists for Company '${companyUuid}'.`);
+  }
+}

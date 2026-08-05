@@ -36,6 +36,16 @@ import { listTaxGroupsController } from "./presentation/controllers/v1/list-tax-
 import { createTaxRuleController } from "./presentation/controllers/v1/create-tax-rule.controller";
 import { getTaxRuleController } from "./presentation/controllers/v1/get-tax-rule.controller";
 import { listTaxRulesController } from "./presentation/controllers/v1/list-tax-rules.controller";
+import { createAccountGroupController } from "./presentation/controllers/v1/create-account-group.controller";
+import { getAccountGroupController } from "./presentation/controllers/v1/get-account-group.controller";
+import { updateAccountGroupController } from "./presentation/controllers/v1/update-account-group.controller";
+import { listAccountGroupsController } from "./presentation/controllers/v1/list-account-groups.controller";
+import { createAccountController } from "./presentation/controllers/v1/create-account.controller";
+import { getAccountController } from "./presentation/controllers/v1/get-account.controller";
+import { updateAccountController } from "./presentation/controllers/v1/update-account.controller";
+import { listAccountsController } from "./presentation/controllers/v1/list-accounts.controller";
+import { activateAccountController } from "./presentation/controllers/v1/activate-account.controller";
+import { deactivateAccountController } from "./presentation/controllers/v1/deactivate-account.controller";
 
 export function createAccountingRouter(deps: AccountingDependencies): Router {
   const router = Router();
@@ -106,6 +116,36 @@ export function createAccountingRouter(deps: AccountingDependencies): Router {
   router.post("/tax-rules", createTaxRuleController(deps));
   router.get("/tax-rules", listTaxRulesController(deps));
   router.get("/tax-rules/:taxRuleUuid", getTaxRuleController(deps));
+
+  // --- Account Group ---
+  // Tenant-owned (MT-001), mirroring Tax Group's own `companyUuid`
+  // ownership shape (00_BUSINESS_RULES.md Ch.18.13/Ch.17.13's "Company
+  // Administrator approval" implies Company-level configuration, not
+  // platform-wide reference data). No delete/lifecycle endpoint — Ch.18.5
+  // documents no state machine ("largely static... platform-provided
+  // standard groupings"), only name/accountType/parent that may be revised.
+  router.post("/account-groups", createAccountGroupController(deps));
+  router.get("/account-groups", listAccountGroupsController(deps));
+  router.get("/account-groups/:accountGroupUuid", getAccountGroupController(deps));
+  router.put("/account-groups/:accountGroupUuid", updateAccountGroupController(deps));
+
+  // --- Account ---
+  // Tenant-owned (MT-001), mirroring its parent Account Group's ownership.
+  // No delete endpoint — an Account's lifecycle is Draft/Inactive -> Active
+  // -> Inactive (00_BUSINESS_RULES.md Ch.17.5), never removed once created,
+  // mirroring Currency's own activate/deactivate-only posture. `code`/
+  // `accountType` are never revisable via the update endpoint (Ch.17.7
+  // COA-004/COA-001). COA-003's deactivation-blocked-while-non-zero-balance
+  // rule and COA-001's posted-immutability rule are deliberately NOT
+  // enforced anywhere here — both require Ledger/Journal Entry data that
+  // does not exist yet, a documented, intentional scope deferral to a
+  // future Journal Entries module.
+  router.post("/accounts", createAccountController(deps));
+  router.get("/accounts", listAccountsController(deps));
+  router.get("/accounts/:accountUuid", getAccountController(deps));
+  router.put("/accounts/:accountUuid", updateAccountController(deps));
+  router.post("/accounts/:accountUuid/activate", activateAccountController(deps));
+  router.post("/accounts/:accountUuid/deactivate", deactivateAccountController(deps));
 
   return router;
 }

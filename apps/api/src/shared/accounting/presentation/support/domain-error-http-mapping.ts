@@ -32,6 +32,14 @@ import {
   TaxRuleOverlapError,
   InvalidTaxRuleEffectiveDateRangeError,
   InvalidTaxRateValueError,
+  AccountGroupNotFoundError,
+  DuplicateAccountGroupNameError,
+  AccountGroupTypeMismatchError,
+  AccountGroupAssignmentTypeMismatchError,
+  AccountNotFoundError,
+  InvalidAccountStatusTransitionError,
+  AccountTypeMismatchError,
+  DuplicateAccountCodeError,
 } from "../../business/accounting-errors";
 
 export interface HttpErrorMapping {
@@ -111,6 +119,30 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof InvalidTaxRateValueError) {
     return { status: 422, code: "ACC_INVALID_TAX_RATE_VALUE" };
+  }
+  if (error instanceof AccountGroupNotFoundError) {
+    return { status: 404, code: "ACC_ACCOUNT_GROUP_NOT_FOUND" };
+  }
+  if (error instanceof DuplicateAccountGroupNameError) {
+    return { status: 409, code: "ACC_DUPLICATE_ACCOUNT_GROUP_NAME" };
+  }
+  if (error instanceof AccountGroupTypeMismatchError) {
+    return { status: 422, code: "ACC_ACCOUNT_GROUP_TYPE_MISMATCH" };
+  }
+  if (error instanceof AccountGroupAssignmentTypeMismatchError) {
+    return { status: 422, code: "ACC_ACCOUNT_GROUP_ASSIGNMENT_TYPE_MISMATCH" };
+  }
+  if (error instanceof AccountNotFoundError) {
+    return { status: 404, code: "ACC_ACCOUNT_NOT_FOUND" };
+  }
+  if (error instanceof InvalidAccountStatusTransitionError) {
+    return { status: 409, code: "ACC_INVALID_ACCOUNT_STATUS_TRANSITION" };
+  }
+  if (error instanceof AccountTypeMismatchError) {
+    return { status: 422, code: "ACC_ACCOUNT_TYPE_MISMATCH" };
+  }
+  if (error instanceof DuplicateAccountCodeError) {
+    return { status: 409, code: "ACC_DUPLICATE_ACCOUNT_CODE" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

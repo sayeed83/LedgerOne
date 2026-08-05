@@ -12,6 +12,8 @@ import { AccountingDependencies } from "../../../src/shared/accounting/business/
 import { FinancialYearStatus } from "../../../src/shared/accounting/domain/enums/financial-year-status.enum";
 import { FiscalPeriodStatus } from "../../../src/shared/accounting/domain/enums/fiscal-period-status.enum";
 import { CurrencyStatus } from "../../../src/shared/accounting/domain/enums/currency-status.enum";
+import { AccountType } from "../../../src/shared/accounting/domain/enums/account-type.enum";
+import { AccountStatus } from "../../../src/shared/accounting/domain/enums/account-status.enum";
 import { DecimalValue } from "../../../src/shared/accounting/domain/value-objects/decimal-value.value-object";
 import {
   buildFinancialYear,
@@ -20,6 +22,8 @@ import {
   buildExchangeRate,
   buildTaxGroup,
   buildTaxRule,
+  buildAccountGroup,
+  buildAccount,
   createFakeAccountingRepository,
 } from "../../../src/shared/accounting/business/test-support/fixtures";
 
@@ -1482,6 +1486,657 @@ describe("Accounting routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.data.uuid).toBe(taxRule.uuid);
       expect(res.body.data.rate).toBe(taxRule.rate.toString());
+    });
+  });
+
+  describe("POST /api/v1/accounting/account-groups", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/account-groups")
+        .send({ companyUuid: COMPANY_UUID, name: "Current Assets", accountType: AccountType.Asset });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 on malformed body", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/account-groups")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ companyUuid: "not-a-uuid" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 409 when an Account Group with the same name already exists for the Company", async () => {
+      const deps = buildDeps();
+      (deps.repository.listAccountGroups as jest.Mock).mockResolvedValue([
+        buildAccountGroup({ name: "Current Assets" }),
+      ]);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/account-groups")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ companyUuid: COMPANY_UUID, name: "Current Assets", accountType: AccountType.Asset });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ACC_DUPLICATE_ACCOUNT_GROUP_NAME");
+    });
+
+    it("returns 404 when the parent Account Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.listAccountGroups as jest.Mock).mockResolvedValue([]);
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/account-groups")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({
+          companyUuid: COMPANY_UUID,
+          name: "Current Assets",
+          accountType: AccountType.Asset,
+          parentAccountGroupUuid: buildAccountGroup().uuid,
+        });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_NOT_FOUND");
+    });
+
+    it("returns 422 (AGP-003) when the parent Account Group's accountType differs", async () => {
+      const deps = buildDeps();
+      (deps.repository.listAccountGroups as jest.Mock).mockResolvedValue([]);
+      const parent = buildAccountGroup({ accountType: AccountType.Liability });
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(parent);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/account-groups")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({
+          companyUuid: COMPANY_UUID,
+          name: "Current Assets",
+          accountType: AccountType.Asset,
+          parentAccountGroupUuid: parent.uuid,
+        });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_TYPE_MISMATCH");
+    });
+
+    it("returns 201 with the created Account Group, exposing only business fields (never id/tenantId/parentAccountGroupId/createdBy)", async () => {
+      const deps = buildDeps();
+      (deps.repository.listAccountGroups as jest.Mock).mockResolvedValue([]);
+      const created = buildAccountGroup({ companyUuid: COMPANY_UUID, name: "Current Assets", accountType: AccountType.Asset });
+      (deps.repository.createAccountGroup as jest.Mock).mockResolvedValue(created);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/account-groups")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ companyUuid: COMPANY_UUID, name: "Current Assets", accountType: AccountType.Asset });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.uuid).toBe(created.uuid);
+      expect(res.body.data.companyUuid).toBe(COMPANY_UUID);
+      expect(res.body.data.accountType).toBe(AccountType.Asset);
+      expect(res.body.data.id).toBeUndefined();
+      expect(res.body.data.tenantId).toBeUndefined();
+      expect(res.body.data.parentAccountGroupId).toBeUndefined();
+      expect(res.body.data.createdBy).toBeUndefined();
+      expect(res.body.data.updatedBy).toBeUndefined();
+      expect(res.body.data.deletedAt).toBeUndefined();
+    });
+  });
+
+  describe("GET /api/v1/accounting/account-groups", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps)).get("/api/v1/accounting/account-groups");
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 200 with the tenant's Account Groups as an array", async () => {
+      const deps = buildDeps();
+      const groups = [buildAccountGroup()];
+      (deps.repository.listAccountGroups as jest.Mock).mockResolvedValue(groups);
+
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/account-groups")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data[0].uuid).toBe(groups[0].uuid);
+    });
+  });
+
+  describe("GET /api/v1/accounting/account-groups/:accountGroupUuid", () => {
+    it("returns 422 for a malformed uuid", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/account-groups/not-a-uuid")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 404 when the Account Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/account-groups/${buildAccountGroup().uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_NOT_FOUND");
+    });
+
+    it("returns 200 with the Account Group", async () => {
+      const deps = buildDeps();
+      const accountGroup = buildAccountGroup();
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(accountGroup);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/account-groups/${accountGroup.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.uuid).toBe(accountGroup.uuid);
+      expect(res.body.data.companyUuid).toBe(accountGroup.companyUuid);
+    });
+  });
+
+  describe("PUT /api/v1/accounting/account-groups/:accountGroupUuid", () => {
+    it("returns 404 when the Account Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/account-groups/${buildAccountGroup().uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ name: "Revised" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_NOT_FOUND");
+    });
+
+    it("returns 409 when the revised name is already used by another Account Group in the same Company", async () => {
+      const deps = buildDeps();
+      const accountGroup = buildAccountGroup({ uuid: "00000000-0000-0000-0000-000000000600", name: "Current Assets" });
+      const other = buildAccountGroup({ uuid: "00000000-0000-0000-0000-000000000601", name: "Fixed Assets" });
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(accountGroup);
+      (deps.repository.listAccountGroups as jest.Mock).mockResolvedValue([accountGroup, other]);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/account-groups/${accountGroup.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ name: "Fixed Assets" });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ACC_DUPLICATE_ACCOUNT_GROUP_NAME");
+    });
+
+    it("returns 422 (AGP-003) when the new parent Account Group's accountType differs from the effective accountType", async () => {
+      const deps = buildDeps();
+      const accountGroup = buildAccountGroup({
+        uuid: "00000000-0000-0000-0000-000000000600",
+        accountType: AccountType.Asset,
+      });
+      const parent = buildAccountGroup({
+        uuid: "00000000-0000-0000-0000-000000000601",
+        accountType: AccountType.Liability,
+      });
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockImplementation(async (_tenantId: bigint, uuid: string) => {
+        if (uuid === accountGroup.uuid) return accountGroup;
+        if (uuid === parent.uuid) return parent;
+        return null;
+      });
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/account-groups/${accountGroup.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ parentAccountGroupUuid: parent.uuid });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_TYPE_MISMATCH");
+    });
+
+    it("returns 200 with the updated Account Group", async () => {
+      const deps = buildDeps();
+      const accountGroup = buildAccountGroup({ name: "Current Assets" });
+      const updated = buildAccountGroup({ name: "Current Assets (Revised)" });
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(accountGroup);
+      (deps.repository.listAccountGroups as jest.Mock).mockResolvedValue([accountGroup]);
+      (deps.repository.updateAccountGroup as jest.Mock).mockResolvedValue(updated);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/account-groups/${accountGroup.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ name: "Current Assets (Revised)" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.name).toBe("Current Assets (Revised)");
+    });
+  });
+
+  describe("POST /api/v1/accounting/accounts", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/accounts")
+        .send({
+          companyUuid: COMPANY_UUID,
+          code: "1000",
+          name: "Cash",
+          accountType: AccountType.Asset,
+          accountGroupUuid: buildAccountGroup().uuid,
+        });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 on malformed body", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/accounts")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ companyUuid: "not-a-uuid" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 409 (COA-004) when the code already exists for the Company", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByCode as jest.Mock).mockResolvedValue(buildAccount({ code: "1000" }));
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/accounts")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({
+          companyUuid: COMPANY_UUID,
+          code: "1000",
+          name: "Cash",
+          accountType: AccountType.Asset,
+          accountGroupUuid: buildAccountGroup().uuid,
+        });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ACC_DUPLICATE_ACCOUNT_CODE");
+    });
+
+    it("returns 404 when the Account Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByCode as jest.Mock).mockResolvedValue(null);
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/accounts")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({
+          companyUuid: COMPANY_UUID,
+          code: "1000",
+          name: "Cash",
+          accountType: AccountType.Asset,
+          accountGroupUuid: buildAccountGroup().uuid,
+        });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_NOT_FOUND");
+    });
+
+    it("returns 422 (AGP-002) when the Account Group's accountType differs from the Account's own", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByCode as jest.Mock).mockResolvedValue(null);
+      const accountGroup = buildAccountGroup({ accountType: AccountType.Liability });
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(accountGroup);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/accounts")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({
+          companyUuid: COMPANY_UUID,
+          code: "1000",
+          name: "Cash",
+          accountType: AccountType.Asset,
+          accountGroupUuid: accountGroup.uuid,
+        });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_ASSIGNMENT_TYPE_MISMATCH");
+    });
+
+    it("returns 404 when the parent Account does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByCode as jest.Mock).mockResolvedValue(null);
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(
+        buildAccountGroup({ accountType: AccountType.Asset }),
+      );
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/accounts")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({
+          companyUuid: COMPANY_UUID,
+          code: "1000",
+          name: "Cash",
+          accountType: AccountType.Asset,
+          accountGroupUuid: buildAccountGroup().uuid,
+          parentAccountUuid: buildAccount().uuid,
+        });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_NOT_FOUND");
+    });
+
+    it("returns 422 (COA-002) when the parent Account's accountType differs", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByCode as jest.Mock).mockResolvedValue(null);
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(
+        buildAccountGroup({ accountType: AccountType.Asset }),
+      );
+      const parentAccount = buildAccount({ accountType: AccountType.Liability });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(parentAccount);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/accounts")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({
+          companyUuid: COMPANY_UUID,
+          code: "1000",
+          name: "Cash",
+          accountType: AccountType.Asset,
+          accountGroupUuid: buildAccountGroup().uuid,
+          parentAccountUuid: parentAccount.uuid,
+        });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_TYPE_MISMATCH");
+    });
+
+    it("returns 201 with the created Account, exposing only business fields (never id/tenantId/accountGroupId/parentAccountId/createdBy)", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByCode as jest.Mock).mockResolvedValue(null);
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(
+        buildAccountGroup({ accountType: AccountType.Asset }),
+      );
+      const created = buildAccount({ companyUuid: COMPANY_UUID, code: "1000", accountType: AccountType.Asset });
+      (deps.repository.createAccount as jest.Mock).mockResolvedValue(created);
+
+      const res = await request(buildApp(deps))
+        .post("/api/v1/accounting/accounts")
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({
+          companyUuid: COMPANY_UUID,
+          code: "1000",
+          name: "Cash",
+          accountType: AccountType.Asset,
+          accountGroupUuid: buildAccountGroup().uuid,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.uuid).toBe(created.uuid);
+      expect(res.body.data.code).toBe("1000");
+      expect(res.body.data.status).toBe(AccountStatus.Draft);
+      expect(res.body.data.id).toBeUndefined();
+      expect(res.body.data.tenantId).toBeUndefined();
+      expect(res.body.data.accountGroupId).toBeUndefined();
+      expect(res.body.data.parentAccountId).toBeUndefined();
+      expect(res.body.data.createdBy).toBeUndefined();
+      expect(res.body.data.updatedBy).toBeUndefined();
+      expect(res.body.data.deletedAt).toBeUndefined();
+    });
+  });
+
+  describe("GET /api/v1/accounting/accounts", () => {
+    it("returns 422 when the X-Tenant-Id header is missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps)).get("/api/v1/accounting/accounts");
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 200 with the tenant's Accounts as an array", async () => {
+      const deps = buildDeps();
+      const accounts = [buildAccount()];
+      (deps.repository.listAccounts as jest.Mock).mockResolvedValue(accounts);
+
+      const res = await request(buildApp(deps)).get("/api/v1/accounting/accounts").set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data[0].uuid).toBe(accounts[0].uuid);
+    });
+
+    it("resolves ?accountGroupUuid= to its internal id before filtering", async () => {
+      const deps = buildDeps();
+      const accountGroup = buildAccountGroup({ id: 10n, uuid: "00000000-0000-0000-0000-000000000600" });
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(accountGroup);
+      (deps.repository.listAccounts as jest.Mock).mockResolvedValue([]);
+
+      await request(buildApp(deps))
+        .get("/api/v1/accounting/accounts")
+        .query({ accountGroupUuid: accountGroup.uuid })
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(deps.repository.listAccounts).toHaveBeenCalledWith(1n, undefined, 10n, undefined);
+    });
+
+    it("returns 404 when the filtering Account Group does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/accounts")
+        .query({ accountGroupUuid: buildAccountGroup().uuid })
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_NOT_FOUND");
+    });
+  });
+
+  describe("GET /api/v1/accounting/accounts/:accountUuid", () => {
+    it("returns 422 for a malformed uuid", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .get("/api/v1/accounting/accounts/not-a-uuid")
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 404 when the Account does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/accounts/${buildAccount().uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_NOT_FOUND");
+    });
+
+    it("returns 200 with the Account", async () => {
+      const deps = buildDeps();
+      const account = buildAccount();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+
+      const res = await request(buildApp(deps))
+        .get(`/api/v1/accounting/accounts/${account.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.uuid).toBe(account.uuid);
+      expect(res.body.data.companyUuid).toBe(account.companyUuid);
+    });
+  });
+
+  describe("PUT /api/v1/accounting/accounts/:accountUuid", () => {
+    it("returns 404 when the Account does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/accounts/${buildAccount().uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ name: "Revised" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_NOT_FOUND");
+    });
+
+    it("returns 422 (AGP-002) when the new Account Group's accountType differs from the Account's own", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ accountType: AccountType.Asset });
+      const accountGroup = buildAccountGroup({
+        uuid: "00000000-0000-0000-0000-000000000601",
+        accountType: AccountType.Liability,
+      });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      (deps.repository.findAccountGroupByUuid as jest.Mock).mockResolvedValue(accountGroup);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/accounts/${account.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ accountGroupUuid: accountGroup.uuid });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_GROUP_ASSIGNMENT_TYPE_MISMATCH");
+    });
+
+    it("returns 422 (COA-002) when the new parent Account's accountType differs from the Account's own", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ uuid: "00000000-0000-0000-0000-000000000700", accountType: AccountType.Asset });
+      const parentAccount = buildAccount({
+        uuid: "00000000-0000-0000-0000-000000000701",
+        accountType: AccountType.Liability,
+      });
+      (deps.repository.findAccountByUuid as jest.Mock).mockImplementation(async (_tenantId: bigint, uuid: string) => {
+        if (uuid === account.uuid) return account;
+        if (uuid === parentAccount.uuid) return parentAccount;
+        return null;
+      });
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/accounts/${account.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ parentAccountUuid: parentAccount.uuid });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_TYPE_MISMATCH");
+    });
+
+    it("returns 200 with the updated Account", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ name: "Cash" });
+      const updated = buildAccount({ name: "Petty Cash" });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      (deps.repository.updateAccount as jest.Mock).mockResolvedValue(updated);
+
+      const res = await request(buildApp(deps))
+        .put(`/api/v1/accounting/accounts/${account.uuid}`)
+        .set("X-Tenant-Id", TENANT_HEADER)
+        .send({ name: "Petty Cash" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.name).toBe("Petty Cash");
+    });
+  });
+
+  describe("POST /api/v1/accounting/accounts/:accountUuid/activate", () => {
+    it("returns 200 when the transition is legal", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ status: AccountStatus.Draft });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      (deps.repository.activateAccount as jest.Mock).mockResolvedValue(
+        buildAccount({ status: AccountStatus.Active }),
+      );
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/accounting/accounts/${account.uuid}/activate`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe(AccountStatus.Active);
+    });
+
+    it("returns 409 when the Account is already Active", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ status: AccountStatus.Active });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/accounting/accounts/${account.uuid}/activate`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ACC_INVALID_ACCOUNT_STATUS_TRANSITION");
+    });
+
+    it("returns 404 when the Account does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/accounting/accounts/${buildAccount().uuid}/activate`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_NOT_FOUND");
+    });
+  });
+
+  describe("POST /api/v1/accounting/accounts/:accountUuid/deactivate", () => {
+    it("returns 200 when the transition is legal", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ status: AccountStatus.Active });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+      (deps.repository.deactivateAccount as jest.Mock).mockResolvedValue(
+        buildAccount({ status: AccountStatus.Inactive }),
+      );
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/accounting/accounts/${account.uuid}/deactivate`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe(AccountStatus.Inactive);
+    });
+
+    it("returns 409 when the Account is not Active", async () => {
+      const deps = buildDeps();
+      const account = buildAccount({ status: AccountStatus.Draft });
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(account);
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/accounting/accounts/${account.uuid}/deactivate`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ACC_INVALID_ACCOUNT_STATUS_TRANSITION");
+    });
+
+    it("returns 404 when the Account does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findAccountByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/accounting/accounts/${buildAccount().uuid}/deactivate`)
+        .set("X-Tenant-Id", TENANT_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ACC_ACCOUNT_NOT_FOUND");
     });
   });
 });
