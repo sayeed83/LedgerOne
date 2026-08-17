@@ -21,6 +21,7 @@ export * from "./components/Badge";
 export * from "./components/Avatar";
 export * from "./components/Dropdown";
 export * from "./components/Dialog";
+export * from "./components/Drawer";
 export * from "./components/Tabs";
 export * from "./components/Table";
 export * from "./components/Spinner";
