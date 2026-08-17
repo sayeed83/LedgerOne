@@ -252,6 +252,7 @@ export function createFakeLedgerRepository(): jest.Mocked<ILedgerRepository> {
     findLedgerEntryByJournalEntryLineId: jest.fn(),
     listLedgerEntries: jest.fn(),
     sumLedgerEntriesBefore: jest.fn(),
+    sumLedgerEntriesByAccounts: jest.fn(),
   };
 }
 

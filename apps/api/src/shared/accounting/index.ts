@@ -57,6 +57,11 @@ import { reverseJournalEntryController } from "./presentation/controllers/v1/rev
 import { getAccountLedgerController } from "./presentation/controllers/v1/get-account-ledger.controller";
 import { getLedgerController } from "./presentation/controllers/v1/get-ledger.controller";
 import { getLedgerEntryController } from "./presentation/controllers/v1/get-ledger-entry.controller";
+import { getTrialBalanceController } from "./presentation/controllers/v1/get-trial-balance.controller";
+import { getBalanceSheetController } from "./presentation/controllers/v1/get-balance-sheet.controller";
+import { getProfitAndLossController } from "./presentation/controllers/v1/get-profit-and-loss.controller";
+import { getCashFlowController } from "./presentation/controllers/v1/get-cash-flow.controller";
+import { getClosingReadinessController } from "./presentation/controllers/v1/get-closing-readiness.controller";
 
 export function createAccountingRouter(deps: AccountingDependencies): Router {
   const router = Router();
@@ -199,6 +204,21 @@ export function createAccountingRouter(deps: AccountingDependencies): Router {
   router.get("/ledger", getLedgerController(deps));
   router.get("/ledger/accounts/:accountUuid", getAccountLedgerController(deps));
   router.get("/ledger/entries/:ledgerEntryUuid", getLedgerEntryController(deps));
+
+  // --- Financial Reports (read-only) ---
+  // Tenant-owned (MT-001), mirroring every other endpoint in this module.
+  // GET-only, by design — 00_BUSINESS_RULES.md Ch.24/25/26/27/32: every one
+  // of these is a derived report over the existing Ledger/Chart of Accounts
+  // data (via the shared `business/reports/` engine); none of them
+  // inserts/updates/deletes/posts/approves/reverses anything, and none
+  // modifies the Ledger, Journal Entries, Financial Years, or Fiscal
+  // Periods. `closing-readiness` (Ch.32) is a read-only readiness CHECK
+  // only — this epic implements no closing action itself.
+  router.get("/reports/trial-balance", getTrialBalanceController(deps));
+  router.get("/reports/balance-sheet", getBalanceSheetController(deps));
+  router.get("/reports/profit-and-loss", getProfitAndLossController(deps));
+  router.get("/reports/cash-flow", getCashFlowController(deps));
+  router.get("/reports/closing-readiness", getClosingReadinessController(deps));
 
   return router;
 }

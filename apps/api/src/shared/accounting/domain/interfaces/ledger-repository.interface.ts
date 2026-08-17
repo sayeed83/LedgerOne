@@ -128,4 +128,33 @@ export interface ILedgerRepository {
     companyUuid: string | undefined,
     position?: LedgerEntryPosition,
   ): Promise<LedgerEntrySumBefore>;
+
+  /**
+   * Batched per-account debit/credit sum over an inclusive `[dateFrom, dateTo]`
+   * range (both ends optional — omitting `dateFrom` sums from account
+   * inception; omitting `dateTo` sums through the latest entry) for every
+   * `accountId` supplied in one query, keyed by `accountId` in the returned
+   * `Map` (an account with no matching entries is simply absent from the
+   * `Map` — callers default to zero, mirroring `sumLedgerEntriesBefore`'s own
+   * "find returns nothing, never throws" convention).
+   *
+   * Added for the Financial Reporting engine (Trial Balance Ch.24, P&L
+   * Ch.25, Balance Sheet Ch.26, Cash Flow Ch.27) — every one of those reports
+   * needs a per-account balance across the FULL Chart of Accounts; calling
+   * `sumLedgerEntriesBefore` once per account would be an N+1 query pattern
+   * at report scale. This is the smallest additive Repository change that
+   * avoids that, per CLAUDE.md §"Repository Rules" ("make ONLY the smallest
+   * additive change"). Deliberately a plain inclusive date-range filter
+   * (mirroring `listLedgerEntries`'s own `dateFrom`/`dateTo` semantics), NOT
+   * `sumLedgerEntriesBefore`'s cursor-exclusive "before a pagination
+   * boundary" semantics — reports don't paginate the Ledger itself, they
+   * need a straightforward period/point-in-time sum.
+   */
+  sumLedgerEntriesByAccounts(
+    tenantId: bigint,
+    companyUuid: string | undefined,
+    accountIds: bigint[],
+    dateFrom?: Date,
+    dateTo?: Date,
+  ): Promise<Map<bigint, LedgerEntrySumBefore>>;
 }

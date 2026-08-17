@@ -145,6 +145,36 @@ export class PrismaLedgerRepository implements ILedgerRepository {
       totalCredit: (result._sum.creditAmount ?? new Prisma.Decimal(0)).toFixed(),
     };
   }
+
+  async sumLedgerEntriesByAccounts(
+    tenantId: bigint,
+    companyUuid: string | undefined,
+    accountIds: bigint[],
+    dateFrom?: Date,
+    dateTo?: Date,
+  ): Promise<Map<bigint, LedgerEntrySumBefore>> {
+    const result = new Map<bigint, LedgerEntrySumBefore>();
+    if (accountIds.length === 0) {
+      return result;
+    }
+    const rows = await prisma.ledgerEntry.groupBy({
+      by: ["accountId"],
+      where: {
+        tenantId,
+        companyUuid,
+        accountId: { in: accountIds },
+        entryDate: dateFrom || dateTo ? { gte: dateFrom, lte: dateTo } : undefined,
+      },
+      _sum: { debitAmount: true, creditAmount: true },
+    });
+    for (const row of rows) {
+      result.set(row.accountId, {
+        totalDebit: (row._sum.debitAmount ?? new Prisma.Decimal(0)).toFixed(),
+        totalCredit: (row._sum.creditAmount ?? new Prisma.Decimal(0)).toFixed(),
+      });
+    }
+    return result;
+  }
 }
 
 /** Keyset predicate for "strictly AFTER `position`" (the next page) — `(entryDate > x) OR (entryDate = x AND uuid > y)`, matching the `[{entryDate:"asc"},{uuid:"asc"}]` ordering exactly so pagination never skips or duplicates a row. */

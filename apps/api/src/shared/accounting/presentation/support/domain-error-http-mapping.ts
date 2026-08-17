@@ -55,6 +55,9 @@ import {
   NoFiscalPeriodForPostingDateError,
   InvalidLedgerCursorError,
   InvalidLedgerDateRangeError,
+  ReportScopeRequiredError,
+  InvalidReportDateRangeError,
+  InvalidReportCursorError,
 } from "../../business/accounting-errors";
 
 export interface HttpErrorMapping {
@@ -203,6 +206,15 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof InvalidLedgerDateRangeError) {
     return { status: 422, code: "ACC_INVALID_LEDGER_DATE_RANGE" };
+  }
+  if (error instanceof ReportScopeRequiredError) {
+    return { status: 422, code: "ACC_REPORT_SCOPE_REQUIRED" };
+  }
+  if (error instanceof InvalidReportDateRangeError) {
+    return { status: 422, code: "ACC_INVALID_REPORT_DATE_RANGE" };
+  }
+  if (error instanceof InvalidReportCursorError) {
+    return { status: 422, code: "ACC_INVALID_REPORT_CURSOR" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

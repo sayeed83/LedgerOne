@@ -394,3 +394,24 @@ export class InvalidLedgerDateRangeError extends DomainError {
     super(`Ledger dateFrom '${dateFrom.toISOString()}' must not be later than dateTo '${dateTo.toISOString()}'.`);
   }
 }
+
+/** Raised by the Financial Reporting engine's `resolve-report-scope.service.ts` when a report's period (Trial Balance, P&L, Balance Sheet, Cash Flow) is requested with none of `fiscalPeriodUuid`, `financialYearUuid`, or an explicit `dateFrom`+`dateTo` range supplied — a report has no other way to know what period it covers (00_BUSINESS_RULES.md Ch.24/25/26/27's shared "Fiscal Period filtering" dependency). */
+export class ReportScopeRequiredError extends DomainError {
+  constructor() {
+    super("A report period must be specified via fiscalPeriodUuid, financialYearUuid, or an explicit dateFrom/dateTo range.");
+  }
+}
+
+/** Raised by `resolve-report-scope.service.ts` when a report's explicit `dateFrom` is later than `dateTo` — the same structural invariant as `InvalidLedgerDateRangeError`, kept as a separate type since it is raised by the Financial Reporting engine, not the General Ledger read model. */
+export class InvalidReportDateRangeError extends DomainError {
+  constructor(public readonly dateFrom: Date, public readonly dateTo: Date) {
+    super(`Report dateFrom '${dateFrom.toISOString()}' must not be later than dateTo '${dateTo.toISOString()}'.`);
+  }
+}
+
+/** Raised by `paginate-report-rows.ts` when a client-supplied report `cursor` cannot be decoded into a well-formed account code — the report-row pagination equivalent of `InvalidLedgerCursorError` (07_REST_API_STANDARDS.md PAG-003). */
+export class InvalidReportCursorError extends DomainError {
+  constructor(public readonly cursor: string) {
+    super(`Report cursor '${cursor}' is not a valid cursor.`);
+  }
+}

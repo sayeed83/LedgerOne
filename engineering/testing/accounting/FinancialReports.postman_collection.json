@@ -1,0 +1,2548 @@
+{
+  "info": {
+    "_postman_id": "7f3a1b2c-4d5e-4f60-9a1b-2c3d4e5f6071",
+    "name": "LedgerOne - Accounting (Financial Reports)",
+    "description": "Financial Reporting engine API collection (Trial Balance Ch.24, Balance Sheet Ch.26, Profit & Loss Ch.25, Cash Flow Ch.27 simplified indirect method, Closing-Readiness Ch.32). Every report is read-only \u2014 no create/update/delete/post/approve/reverse endpoint exists anywhere in this collection; all reports are derived over the existing Ledger/Chart of Accounts data via the shared business/reports/ engine. Setup creates its own Financial Year/Fiscal Period/Account Groups/Accounts and posts four Journal Entries (capital injection $2000, sale on credit $500, rent paid in cash $300, expense on credit $150) so every report has real, cross-checkable numbers: Trial Balance totals 2950/2950; Balance Sheet Assets 2200 = Liabilities 150 + Equity 2050 (incl. Current Year Earnings 50); P&L Net Profit = 500 - 450 = 50; Cash Flow's Net Cash Flow (1700) reconciles exactly to the Cash account's own period movement. The Cash account is deliberately placed in its own 'Cash and Bank'-named Account Group, distinct from Receivables' group, since Cash Flow's simplified indirect method identifies Cash/Bank accounts by Account Group name (see get-cash-flow.service.ts) \u2014 this is what exercises that heuristic correctly.\n\nDesign note (JWT required): same convention as every other collection in this folder \u2014 every protected request carries `Authorization: Bearer {{accessToken}}`, the same long-lived dev-only token for tenantId 900001 already used by FinancialYear/FiscalPeriod/ChartOfAccounts/Currency/Tax/JournalEntries/Ledger.\n\nDesign note (repeatability): a collection-level pre-request script generates `{{frYear}}`/`{{frYearEnd}}` (base 9000, distinct from every other collection's own base/modulus sharing the same financial_years/accounts tables under the same companyUuid) once per Newman invocation.\n\nRun order for a full pass, top to bottom: every 'Setup' request must run first, in order, to seed fixture variables; every 'Reports' and 'Errors' request depends on them (the pagination and cursor-chaining requests within 'Reports' must also run in the order shown).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request) \u2014 base 9000, distinct from",
+          "// FinancialYear (2030), FiscalPeriod (3000), Tax (3000/3400), JournalEntries",
+          "// (6000/6600/7200), and Ledger (8000), since all of these write into the same",
+          "// financial_years/accounts tables under the same companyUuid.",
+          "if (!pm.collectionVariables.get(\"frYear\")) {",
+          "    const frYear = 9000 + (Date.now() % 500);",
+          "    pm.collectionVariables.set(\"frYear\", String(frYear));",
+          "    pm.collectionVariables.set(\"frYearEnd\", String(frYear + 1));",
+          "    // A dedicated, freshly-generated companyUuid PER Newman invocation \u2014",
+          "    // deliberately NOT the shared {{companyUuid}} environment variable every",
+          "    // other collection in this folder reuses. Trial Balance/Balance Sheet are",
+          "    // cumulative-since-inception reports scoped to the WHOLE company's Chart of",
+          "    // Accounts (unlike Ledger's own per-account scoping) \u2014 reusing one company",
+          "    // across repeated runs would let each run's own permanently-Open Financial",
+          "    // Year (this epic implements no closing mutation) leak its Revenue/Expense",
+          "    // difference into every later run's Balance Sheet totals, since that stale",
+          "    // year's earnings are never transferred to Retained Earnings (Ch.32, out of",
+          "    // scope here). A fresh company per run keeps each run's own numbers exact",
+          "    // and independently verifiable, which is what proves repeatability.",
+          "    function uuidFrom(seed) {",
+          "        const hex = seed.toString(16).padStart(12, \"0\").slice(-12);",
+          "        return `cc000000-0000-4000-8000-${hex}`;",
+          "    }",
+          "    pm.collectionVariables.set(\"frCompanyUuid\", uuidFrom(Date.now()));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "frYear",
+      "value": ""
+    },
+    {
+      "key": "frYearEnd",
+      "value": ""
+    },
+    {
+      "key": "frCompanyUuid",
+      "value": ""
+    },
+    {
+      "key": "frFinancialYearUuid",
+      "value": ""
+    },
+    {
+      "key": "frFiscalPeriodUuid",
+      "value": ""
+    },
+    {
+      "key": "frAssetGroupUuid",
+      "value": ""
+    },
+    {
+      "key": "frLiabilityGroupUuid",
+      "value": ""
+    },
+    {
+      "key": "frEquityGroupUuid",
+      "value": ""
+    },
+    {
+      "key": "frRevenueGroupUuid",
+      "value": ""
+    },
+    {
+      "key": "frExpenseGroupUuid",
+      "value": ""
+    },
+    {
+      "key": "frCashUuid",
+      "value": ""
+    },
+    {
+      "key": "frReceivableUuid",
+      "value": ""
+    },
+    {
+      "key": "frPayableUuid",
+      "value": ""
+    },
+    {
+      "key": "frCapitalUuid",
+      "value": ""
+    },
+    {
+      "key": "frSalesUuid",
+      "value": ""
+    },
+    {
+      "key": "frRentUuid",
+      "value": ""
+    },
+    {
+      "key": "frJournalEntryUuid1",
+      "value": ""
+    },
+    {
+      "key": "frJournalEntryUuid2",
+      "value": ""
+    },
+    {
+      "key": "frJournalEntryUuid3",
+      "value": ""
+    },
+    {
+      "key": "frJournalEntryUuid4",
+      "value": ""
+    },
+    {
+      "key": "frTrialBalanceCursor",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "Create Financial Year (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"startDate\": \"{{frYear}}-04-01\",\n  \"endDate\": \"{{frYearEnd}}-03-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frFinancialYearUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Financial Year (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/financial-years/{{frFinancialYearUuid}}/open",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "financial-years",
+                "{{frFinancialYearUuid}}",
+                "open"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fiscal Period (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/fiscal-periods",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "fiscal-periods"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"financialYearUuid\": \"{{frFinancialYearUuid}}\",\n  \"startDate\": \"{{frYear}}-04-01\",\n  \"endDate\": \"{{frYear}}-04-30\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frFiscalPeriodUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Cash and Bank Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/account-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "account-groups"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"name\": \"Financial Reporting Cash and Bank {{frYear}}\",\n  \"accountType\": \"ASSET\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frCashGroupUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Receivables Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/account-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "account-groups"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"name\": \"Financial Reporting Receivables {{frYear}}\",\n  \"accountType\": \"ASSET\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frAssetGroupUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Payables Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/account-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "account-groups"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"name\": \"Financial Reporting Payables {{frYear}}\",\n  \"accountType\": \"LIABILITY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frLiabilityGroupUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Equity Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/account-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "account-groups"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"name\": \"Financial Reporting Equity {{frYear}}\",\n  \"accountType\": \"EQUITY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frEquityGroupUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Revenue Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/account-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "account-groups"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"name\": \"Financial Reporting Revenue {{frYear}}\",\n  \"accountType\": \"REVENUE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frRevenueGroupUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Expenses Account Group (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/account-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "account-groups"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"name\": \"Financial Reporting Expenses {{frYear}}\",\n  \"accountType\": \"EXPENSE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frExpenseGroupUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Account Cash and Bank (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"code\": \"1{{frYear}}0\",\n  \"name\": \"Cash and Bank {{frYear}}\",\n  \"accountType\": \"ASSET\",\n  \"accountGroupUuid\": \"{{frCashGroupUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frCashUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Account Cash and Bank (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{frCashUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts",
+                "{{frCashUuid}}",
+                "activate"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Account Accounts Receivable (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"code\": \"1{{frYear}}1\",\n  \"name\": \"Accounts Receivable {{frYear}}\",\n  \"accountType\": \"ASSET\",\n  \"accountGroupUuid\": \"{{frAssetGroupUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frReceivableUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Account Accounts Receivable (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{frReceivableUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts",
+                "{{frReceivableUuid}}",
+                "activate"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Account Accounts Payable (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"code\": \"2{{frYear}}0\",\n  \"name\": \"Accounts Payable {{frYear}}\",\n  \"accountType\": \"LIABILITY\",\n  \"accountGroupUuid\": \"{{frLiabilityGroupUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frPayableUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Account Accounts Payable (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{frPayableUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts",
+                "{{frPayableUuid}}",
+                "activate"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Account Share Capital (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"code\": \"3{{frYear}}0\",\n  \"name\": \"Share Capital {{frYear}}\",\n  \"accountType\": \"EQUITY\",\n  \"accountGroupUuid\": \"{{frEquityGroupUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frCapitalUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Account Share Capital (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{frCapitalUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts",
+                "{{frCapitalUuid}}",
+                "activate"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Account Sales Revenue (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"code\": \"4{{frYear}}0\",\n  \"name\": \"Sales Revenue {{frYear}}\",\n  \"accountType\": \"REVENUE\",\n  \"accountGroupUuid\": \"{{frRevenueGroupUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frSalesUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Account Sales Revenue (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{frSalesUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts",
+                "{{frSalesUuid}}",
+                "activate"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Account Rent Expense (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"code\": \"5{{frYear}}0\",\n  \"name\": \"Rent Expense {{frYear}}\",\n  \"accountType\": \"EXPENSE\",\n  \"accountGroupUuid\": \"{{frExpenseGroupUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frRentUuid\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Account Rent Expense (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/accounts/{{frRentUuid}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "accounts",
+                "{{frRentUuid}}",
+                "activate"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Journal Entry - Capital Injection (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"postingDate\": \"{{frYear}}-04-05\",\n  \"description\": \"Share capital injection\",\n  \"lines\": [\n    {\"accountUuid\": \"{{frCashUuid}}\", \"debitAmount\": \"2000\", \"creditAmount\": \"0\"},\n    {\"accountUuid\": \"{{frCapitalUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"2000\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frJournalEntryUuid1\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post Journal Entry - Capital Injection (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{frJournalEntryUuid1}}/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries",
+                "{{frJournalEntryUuid1}}",
+                "post"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Journal Entry - Sale On Credit (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"postingDate\": \"{{frYear}}-04-10\",\n  \"description\": \"Sale on credit\",\n  \"lines\": [\n    {\"accountUuid\": \"{{frReceivableUuid}}\", \"debitAmount\": \"500\", \"creditAmount\": \"0\"},\n    {\"accountUuid\": \"{{frSalesUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"500\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frJournalEntryUuid2\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post Journal Entry - Sale On Credit (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{frJournalEntryUuid2}}/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries",
+                "{{frJournalEntryUuid2}}",
+                "post"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Journal Entry - Rent Paid In Cash (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"postingDate\": \"{{frYear}}-04-15\",\n  \"description\": \"Rent paid in cash\",\n  \"lines\": [\n    {\"accountUuid\": \"{{frRentUuid}}\", \"debitAmount\": \"300\", \"creditAmount\": \"0\"},\n    {\"accountUuid\": \"{{frCashUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"300\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frJournalEntryUuid3\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post Journal Entry - Rent Paid In Cash (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{frJournalEntryUuid3}}/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries",
+                "{{frJournalEntryUuid3}}",
+                "post"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Journal Entry - Expense On Credit (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{frCompanyUuid}}\",\n  \"postingDate\": \"{{frYear}}-04-20\",\n  \"description\": \"Expense on credit\",\n  \"lines\": [\n    {\"accountUuid\": \"{{frRentUuid}}\", \"debitAmount\": \"150\", \"creditAmount\": \"0\"},\n    {\"accountUuid\": \"{{frPayableUuid}}\", \"debitAmount\": \"0\", \"creditAmount\": \"150\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set(\"frJournalEntryUuid4\", pm.response.json().data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post Journal Entry - Expense On Credit (Setup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/journal-entries/{{frJournalEntryUuid4}}/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "journal-entries",
+                "{{frJournalEntryUuid4}}",
+                "post"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Trial Balance - as of Fiscal Period end (balanced)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/trial-balance?companyUuid={{frCompanyUuid}}&asOfDate={{frYear}}-04-30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "trial-balance"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "asOfDate",
+                  "value": "{{frYear}}-04-30"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Trial Balance is balanced (TRB-001)\", function () { pm.expect(json.data.isBalanced).to.eql(true); });",
+                  "pm.test(\"totalDebit equals totalCredit\", function () { pm.expect(json.data.totalDebit).to.eql(json.data.totalCredit); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trial Balance - by fiscalPeriodUuid filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/trial-balance?companyUuid={{frCompanyUuid}}&fiscalPeriodUuid={{frFiscalPeriodUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "trial-balance"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "fiscalPeriodUuid",
+                  "value": "{{frFiscalPeriodUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"isProvisional is true for an Open Fiscal Period\", function () { pm.expect(pm.response.json().data.isProvisional).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trial Balance - pagination (limit=2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/trial-balance?companyUuid={{frCompanyUuid}}&asOfDate={{frYear}}-04-30&limit=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "trial-balance"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "asOfDate",
+                  "value": "{{frYear}}-04-30"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Returns at most 2 rows (PAG-004)\", function () { pm.expect(json.data.rows.length).to.be.at.most(2); });",
+                  "pm.test(\"Has pagination meta with hasMore/nextCursor\", function () { pm.expect(json.meta.pagination).to.have.property(\"hasMore\"); pm.expect(json.meta.pagination).to.have.property(\"nextCursor\"); });",
+                  "if (json.meta.pagination.hasMore) { pm.collectionVariables.set(\"frTrialBalanceCursor\", json.meta.pagination.nextCursor); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trial Balance - next page via cursor",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/trial-balance?companyUuid={{frCompanyUuid}}&asOfDate={{frYear}}-04-30&limit=2&cursor={{frTrialBalanceCursor}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "trial-balance"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "asOfDate",
+                  "value": "{{frYear}}-04-30"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{frTrialBalanceCursor}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Returns at most 2 rows (PAG-004)\", function () { pm.expect(json.data.rows.length).to.be.at.most(2); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance Sheet - as of Fiscal Period end (balanced, includes Current Year Earnings)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/balance-sheet?companyUuid={{frCompanyUuid}}&asOfDate={{frYear}}-04-30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "balance-sheet"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "asOfDate",
+                  "value": "{{frYear}}-04-30"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Balance Sheet is balanced (BAL-001)\", function () { pm.expect(json.data.isBalanced).to.eql(true); });",
+                  "pm.test(\"currentYearEarnings equals Net Profit (BAL-002)\", function () { pm.expect(json.data.currentYearEarnings).to.eql(\"50\"); });",
+                  "pm.test(\"Assets total is 2200\", function () { pm.expect(json.data.assets.total).to.eql(\"2200\"); });",
+                  "pm.test(\"Liabilities total is 150\", function () { pm.expect(json.data.liabilities.total).to.eql(\"150\"); });",
+                  "pm.test(\"Equity total is 2050 (2000 Share Capital + 50 Current Year Earnings)\", function () { pm.expect(json.data.equity.total).to.eql(\"2050\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance Sheet - by financialYearUuid filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/balance-sheet?companyUuid={{frCompanyUuid}}&financialYearUuid={{frFinancialYearUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "balance-sheet"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "financialYearUuid",
+                  "value": "{{frFinancialYearUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Profit and Loss - by fiscalPeriodUuid filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/profit-and-loss?companyUuid={{frCompanyUuid}}&fiscalPeriodUuid={{frFiscalPeriodUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "profit-and-loss"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "fiscalPeriodUuid",
+                  "value": "{{frFiscalPeriodUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Net Profit = Revenue - Expenses (PNL-002)\", function () { pm.expect(json.data.netProfit).to.eql(\"50\"); });",
+                  "pm.test(\"Only Revenue/Expense accounts appear (PNL-001)\", function () { pm.expect(json.data.revenue.total).to.eql(\"500\"); pm.expect(json.data.expenses.total).to.eql(\"450\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Profit and Loss - by explicit dateFrom/dateTo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/profit-and-loss?companyUuid={{frCompanyUuid}}&dateFrom={{frYear}}-04-01&dateTo={{frYear}}-04-30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "profit-and-loss"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "{{frYear}}-04-01"
+                },
+                {
+                  "key": "dateTo",
+                  "value": "{{frYear}}-04-30"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cash Flow - by fiscalPeriodUuid filter (reconciles)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/cash-flow?companyUuid={{frCompanyUuid}}&fiscalPeriodUuid={{frFiscalPeriodUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "cash-flow"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "fiscalPeriodUuid",
+                  "value": "{{frFiscalPeriodUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Net Cash Flow reconciles to the actual Cash balance change (CFL-001)\", function () { pm.expect(json.data.reconciles).to.eql(true); pm.expect(json.data.netCashFlow).to.eql(json.data.actualCashChange); });",
+                  "pm.test(\"Net Cash Flow is 1700 (Cash account's own period movement: +2000 - 300)\", function () { pm.expect(json.data.netCashFlow).to.eql(\"1700\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Closing Readiness - ready to close",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/closing-readiness?companyUuid={{frCompanyUuid}}&fiscalPeriodUuid={{frFiscalPeriodUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "closing-readiness"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "fiscalPeriodUuid",
+                  "value": "{{frFiscalPeriodUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Response Content-Type is application/json\", function () { pm.response.to.have.header(\"Content-Type\"); });",
+                  "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Trial Balance balanced (CLS-001)\", function () { pm.expect(json.data.trialBalanceBalanced).to.eql(true); });",
+                  "pm.test(\"Prior periods closed (CLS-002, vacuously true - no prior periods)\", function () { pm.expect(json.data.priorPeriodsClosed).to.eql(true); });",
+                  "pm.test(\"Ready to close\", function () { pm.expect(json.data.readyToClose).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Errors",
+      "item": [
+        {
+          "name": "401 - Trial Balance without Authorization header",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/trial-balance?companyUuid={{frCompanyUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "trial-balance"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - Trial Balance missing companyUuid",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/trial-balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "trial-balance"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () { pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - Closing Readiness unknown fiscalPeriodUuid",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/closing-readiness?companyUuid={{frCompanyUuid}}&fiscalPeriodUuid=00000000-0000-0000-0000-000000000999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "closing-readiness"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "fiscalPeriodUuid",
+                  "value": "00000000-0000-0000-0000-000000000999"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+                  "pm.test(\"Error code is ACC_FISCAL_PERIOD_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_FISCAL_PERIOD_NOT_FOUND\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - Profit and Loss with dateFrom after dateTo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/profit-and-loss?companyUuid={{frCompanyUuid}}&dateFrom={{frYear}}-06-01&dateTo={{frYear}}-01-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "profit-and-loss"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "{{frYear}}-06-01"
+                },
+                {
+                  "key": "dateTo",
+                  "value": "{{frYear}}-01-01"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is ACC_INVALID_REPORT_DATE_RANGE\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_INVALID_REPORT_DATE_RANGE\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - Profit and Loss with no period specified",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/profit-and-loss?companyUuid={{frCompanyUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "profit-and-loss"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error code is ACC_REPORT_SCOPE_REQUIRED\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_REPORT_SCOPE_REQUIRED\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - Balance Sheet unknown financialYearUuid",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounting/reports/balance-sheet?companyUuid={{frCompanyUuid}}&financialYearUuid=00000000-0000-0000-0000-000000000999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounting",
+                "reports",
+                "balance-sheet"
+              ],
+              "query": [
+                {
+                  "key": "companyUuid",
+                  "value": "{{frCompanyUuid}}"
+                },
+                {
+                  "key": "financialYearUuid",
+                  "value": "00000000-0000-0000-0000-000000000999"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () { pm.response.to.have.status(404); });",
+                  "pm.test(\"Error code is ACC_FINANCIAL_YEAR_NOT_FOUND\", function () { pm.expect(pm.response.json().error.code).to.eql(\"ACC_FINANCIAL_YEAR_NOT_FOUND\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
