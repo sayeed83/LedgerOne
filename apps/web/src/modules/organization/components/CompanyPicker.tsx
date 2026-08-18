@@ -26,7 +26,7 @@ export function CompanyPicker({ tenantUuid, value, onChange }: CompanyPickerProp
       placeholder="Select a Company…"
       options={options}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={onChange}
       disabled={companiesQuery.isLoading || options.length === 0}
     />
   );

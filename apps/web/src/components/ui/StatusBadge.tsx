@@ -15,6 +15,16 @@ const VARIANT_BY_STATUS: Record<string, BadgeVariant> = {
   CLOSED: "danger",
   DISSOLVED: "danger",
   DEACTIVATED: "danger",
+  // Accounting module statuses (Financial Year, Fiscal Period, Currency,
+  // Account, Journal Entry) — same one-map-platform-wide rule (FP6).
+  FUTURE: "default",
+  OPEN: "success",
+  CLOSING: "warning",
+  REOPENED: "warning",
+  SOFT_CLOSED: "warning",
+  PENDING_APPROVAL: "warning",
+  POSTED: "success",
+  REVERSED: "danger",
 };
 
 function toLabel(status: string): string {

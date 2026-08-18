@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ProtectedRoute } from "@/modules/authentication/components/ProtectedRoute";
 import { ErpShell } from "@/layouts/erp-shell.layout";
 import { CurrentTenantProvider } from "@/context/current-tenant.context";
+import { CurrentCompanyProvider } from "@/context/current-company.context";
 
 // ROUTE-004: the auth guard is centralized here, at the layout level, for
 // every route under (dashboard) — never duplicated per page. LAY-001: the
@@ -14,7 +15,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <ProtectedRoute>
       <CurrentTenantProvider>
-        <ErpShell>{children}</ErpShell>
+        <CurrentCompanyProvider>
+          <ErpShell>{children}</ErpShell>
+        </CurrentCompanyProvider>
       </CurrentTenantProvider>
     </ProtectedRoute>
   );

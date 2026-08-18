@@ -6,3 +6,14 @@ html,
 body {
   height: 100%;
 }
+
+/* Native <select> dropdown popups render with an OS-native (typically
+   white) background in every browser, regardless of the app's own dark
+   theme — but our <select> elements set light text color for dark mode.
+   Without this, every dropdown's open option list is light-text-on-white,
+   i.e. invisible. Force each <option> to a legible dark-on-light pairing
+   app-wide instead of patching every call site individually. */
+select option {
+  color: #111827;
+  background-color: #ffffff;
+}

@@ -50,7 +50,7 @@ export function UserOrganizationFields({
           label: `${company.companyCode} — ${company.legalName}`,
         }))}
         value={companyUuid}
-        onChange={(event) => onCompanyChange(event.target.value)}
+        onChange={onCompanyChange}
         disabled={!tenantUuid || companiesQuery.isLoading}
         error={companyError}
         hint={noTenantHint}
@@ -63,7 +63,7 @@ export function UserOrganizationFields({
           label: `${branch.branchCode} — ${branch.branchName}`,
         }))}
         value={branchUuid}
-        onChange={(event) => onBranchChange(event.target.value)}
+        onChange={onBranchChange}
         disabled={!tenantUuid || !companyUuid || branchesQuery.isLoading}
         hint={companyUuid ? undefined : "Select a Company first."}
       />
@@ -75,7 +75,7 @@ export function UserOrganizationFields({
           label: `${department.departmentCode} — ${department.departmentName}`,
         }))}
         value={departmentUuid}
-        onChange={(event) => onDepartmentChange(event.target.value)}
+        onChange={onDepartmentChange}
         disabled={!tenantUuid || !companyUuid || departmentsQuery.isLoading}
         hint={companyUuid ? undefined : "Select a Company first."}
       />

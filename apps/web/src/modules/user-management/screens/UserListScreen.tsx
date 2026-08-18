@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { UserResponseDto } from "@ledgerone/shared-types";
-import { Drawer, LoadingButton, PlusIcon, UsersIcon } from "@ledgerone/ui";
+import { Drawer, LoadingButton, PlusIcon, Select, UsersIcon } from "@ledgerone/ui";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Toolbar } from "@/components/ui/Toolbar";
 import { SearchBox } from "@/components/ui/SearchBox";
@@ -105,38 +105,36 @@ export function UserListScreen() {
         }
         filters={
           <>
-            <select
+            <Select
+              label="Status"
+              compact
               value={statusFilter}
-              onChange={(event) => {
-                setStatusFilter(event.target.value as (typeof STATUS_OPTIONS)[number]);
+              options={STATUS_OPTIONS.map((status) => ({
+                value: status,
+                label: status === "ALL" ? "All Statuses" : status,
+              }))}
+              onChange={(next) => {
+                setStatusFilter(next as (typeof STATUS_OPTIONS)[number]);
                 setPage(1);
               }}
-              aria-label="Filter by status"
-              className="rounded-xl border border-surface-border bg-surface-sunken px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary-500/40"
-            >
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {status === "ALL" ? "All Statuses" : status}
-                </option>
-              ))}
-            </select>
-            <select
+            />
+            <Select
+              label="Company"
+              compact
               value={companyFilter}
-              onChange={(event) => {
-                setCompanyFilter(event.target.value);
+              options={[
+                { value: "", label: "All Companies" },
+                ...(companiesQuery.data ?? []).map((company) => ({
+                  value: company.uuid,
+                  label: `${company.companyCode} — ${company.legalName}`,
+                })),
+              ]}
+              disabled={!tenantUuid || (companiesQuery.data ?? []).length === 0}
+              onChange={(next) => {
+                setCompanyFilter(next);
                 setPage(1);
               }}
-              disabled={!tenantUuid || (companiesQuery.data ?? []).length === 0}
-              aria-label="Filter by company"
-              className="rounded-xl border border-surface-border bg-surface-sunken px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <option value="">All Companies</option>
-              {(companiesQuery.data ?? []).map((company) => (
-                <option key={company.uuid} value={company.uuid}>
-                  {company.companyCode} — {company.legalName}
-                </option>
-              ))}
-            </select>
+            />
           </>
         }
       >

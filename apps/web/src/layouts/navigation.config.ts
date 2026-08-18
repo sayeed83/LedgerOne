@@ -93,5 +93,31 @@ export function getBreadcrumbTrail(pathname: string): BreadcrumbItem[] {
     trail.push({ label: "Details", href: pathname });
   }
 
+  // Accounting's own nested/detail-level routes — Financial Year's own
+  // Fiscal Periods, Tax Group's own Tax Rules (surfaced inline, no separate
+  // route), and Chart of Accounts' own Account Groups sub-section.
+  if (pathname.startsWith("/accounting/")) {
+    const segments = pathname.split("/").filter(Boolean);
+    const [, section, ...rest] = segments;
+    const sectionItem = NAVIGATION_ITEMS.find((item) => item.href === `/accounting/${section}`);
+    if (sectionItem) {
+      trail.push({ label: sectionItem.label, href: sectionItem.href });
+    }
+    if (section === "financial-years" && rest[0]) {
+      trail.push({ label: "Details", href: `/accounting/financial-years/${rest[0]}` });
+      if (rest[1] === "periods" && rest[2]) {
+        trail.push({ label: "Fiscal Period", href: pathname });
+      }
+    } else if (section === "chart-of-accounts" && rest[0] === "groups" && rest[1]) {
+      trail.push({ label: "Account Group", href: pathname });
+    } else if (section === "chart-of-accounts" && rest[0]) {
+      trail.push({ label: "Details", href: pathname });
+    } else if (section === "journal-entries" && rest[0] === "new") {
+      trail.push({ label: "New Journal Entry", href: pathname });
+    } else if (rest[0]) {
+      trail.push({ label: "Details", href: pathname });
+    }
+  }
+
   return trail;
 }

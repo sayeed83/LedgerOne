@@ -1,5 +1,14 @@
-import { forwardRef, useId, type SelectHTMLAttributes } from "react";
-import { ChevronDownIcon } from "../icons";
+"use client";
+
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import { ChevronDownIcon, SearchIcon } from "../icons";
 import { cn } from "../utils/cn";
 
 export interface SelectOption {
@@ -7,72 +16,275 @@ export interface SelectOption {
   label: string;
 }
 
-export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "children"> {
+export interface SelectProps {
   label: string;
   options: SelectOption[];
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  name?: string;
   placeholder?: string;
   error?: string;
   hint?: string;
+  disabled?: boolean;
+  id?: string;
+  className?: string;
+  // Toolbar/filter usage (alongside SearchBox, LoadingButton) — no visible
+  // label row (an `aria-label` is used instead), and sized to match
+  // SearchBox's compact height/typography instead of a full form field's.
+  compact?: boolean;
 }
 
-// Native `<select>` (A11Y-001/002 for free) with `appearance-none` +
-// a supplementary chevron icon — the icon never carries meaning alone,
-// since the browser's own dropdown affordance still exists via the
-// element's native behavior.
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, options, placeholder, error, hint, id, className, ...rest }, ref) => {
-    const generatedId = useId();
-    const selectId = id ?? generatedId;
-    const hintId = hint ? `${selectId}-hint` : undefined;
-    const errorId = error ? `${selectId}-error` : undefined;
+// A searchable combobox (WAI-ARIA combobox pattern, hand-rolled — no new
+// dependency added to the frozen stack, same rationale as Dialog/Tabs) —
+// every dropdown in the app goes through this one shared primitive
+// (FP6/CMP-002), so "make dropdowns searchable" is a single-component
+// change rather than a per-screen one. Controlled only (`value`/
+// `onChange(value)`) — callers wire this through RHF's `Controller`, not
+// `register()` directly, since the visible text (the option's label) is
+// never the same string as the underlying `value`.
+export function Select({
+  label,
+  options,
+  value,
+  onChange,
+  onBlur,
+  name,
+  placeholder = "Select…",
+  error,
+  hint,
+  disabled = false,
+  id,
+  className,
+  compact = false,
+}: SelectProps) {
+  const generatedId = useId();
+  const selectId = id ?? generatedId;
+  const listboxId = `${selectId}-listbox`;
+  const hintId = hint ? `${selectId}-hint` : undefined;
+  const errorId = error ? `${selectId}-error` : undefined;
 
-    return (
-      <div className="flex flex-col gap-1.5">
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+
+  const selectedOption = options.find((option) => option.value === value) ?? null;
+
+  const filteredOptions = useMemo(() => {
+    if (!query.trim()) {
+      return options;
+    }
+    const term = query.trim().toLowerCase();
+    return options.filter((option) => option.label.toLowerCase().includes(term));
+  }, [options, query]);
+
+  // Keep the visible text in sync with the controlled `value` while closed
+  // — e.g. when a parent resets the field or options finish loading.
+  useEffect(() => {
+    if (!isOpen) {
+      setQuery("");
+    }
+  }, [isOpen, value]);
+
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [query, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    function handlePointerDown(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [isOpen]);
+
+  function openList() {
+    if (disabled) {
+      return;
+    }
+    setIsOpen(true);
+  }
+
+  function commit(option: SelectOption) {
+    onChange(option.value);
+    setQuery("");
+    setIsOpen(false);
+    inputRef.current?.focus();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (disabled) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!isOpen) {
+        openList();
+        return;
+      }
+      setHighlightedIndex((index) => Math.min(index + 1, filteredOptions.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlightedIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const option = filteredOptions[highlightedIndex];
+      if (isOpen && option) {
+        commit(option);
+      } else {
+        openList();
+      }
+    } else if (event.key === "Escape") {
+      if (isOpen) {
+        event.preventDefault();
+        setQuery("");
+        setIsOpen(false);
+      }
+    } else if (event.key === "Tab") {
+      setIsOpen(false);
+    }
+  }
+
+  const displayValue = isOpen ? query : (selectedOption?.label ?? "");
+  const activeDescendantId =
+    isOpen && filteredOptions[highlightedIndex] ? `${listboxId}-option-${highlightedIndex}` : undefined;
+
+  return (
+    <div ref={containerRef} className={cn("flex flex-col", compact ? "gap-0" : "gap-1.5")}>
+      {!compact && (
         <label htmlFor={selectId} className="text-sm font-medium text-gray-700 dark:text-ink">
           {label}
         </label>
-        <div className="relative">
-          <select
-            ref={ref}
-            id={selectId}
-            aria-invalid={Boolean(error)}
-            aria-describedby={[hintId, errorId].filter(Boolean).join(" ") || undefined}
-            defaultValue={rest.defaultValue ?? ""}
-            className={cn(
-              "w-full appearance-none rounded-xl border bg-white px-4 py-3 pr-10 text-[15px] text-gray-900 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/[0.03] dark:text-ink",
-              error
-                ? "border-danger-500 focus:border-danger-500 focus:ring-danger-500/30"
-                : "border-gray-300 focus:border-primary-500 dark:border-surface-border dark:focus:border-primary-500",
-              className,
-            )}
-            {...rest}
+      )}
+      <div className={cn("relative", compact && "w-full max-w-xs")}>
+        <span
+          className={cn(
+            "pointer-events-none absolute inset-y-0 left-0 flex items-center justify-center",
+            compact ? "w-9 text-ink-faint" : "w-11 text-gray-400 dark:text-ink-muted",
+          )}
+          aria-hidden="true"
+        >
+          <SearchIcon className="h-4 w-4" />
+        </span>
+        <input
+          ref={inputRef}
+          id={selectId}
+          name={name}
+          role="combobox"
+          aria-label={compact ? label : undefined}
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
+          aria-controls={listboxId}
+          aria-activedescendant={activeDescendantId}
+          aria-autocomplete="list"
+          aria-invalid={Boolean(error)}
+          aria-describedby={[hintId, errorId].filter(Boolean).join(" ") || undefined}
+          autoComplete="off"
+          disabled={disabled}
+          placeholder={placeholder}
+          value={displayValue}
+          onFocus={openList}
+          onClick={openList}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            if (!isOpen) {
+              setIsOpen(true);
+            }
+          }}
+          onKeyDown={handleKeyDown}
+          onBlur={() => {
+            // Let a click on an option register (via mousedown, above)
+            // before the blur-triggered close/revert races it.
+            window.setTimeout(() => {
+              setIsOpen(false);
+              setQuery("");
+            }, 0);
+            onBlur?.();
+          }}
+          className={cn(
+            "w-full rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
+            compact
+              ? "border-surface-border bg-surface-sunken py-2 pl-9 pr-8 text-sm text-ink placeholder:text-ink-faint"
+              : "bg-white py-3 pl-11 pr-10 text-[15px] text-gray-900 shadow-sm placeholder:text-gray-400 dark:bg-white/[0.03] dark:text-ink dark:placeholder:text-ink-muted/70",
+            error
+              ? "border-danger-500 focus:border-danger-500 focus:ring-danger-500/30"
+              : !compact && "border-gray-300 focus:border-primary-500 dark:border-surface-border dark:focus:border-primary-500",
+            className,
+          )}
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          disabled={disabled}
+          onClick={() => {
+            if (isOpen) {
+              setIsOpen(false);
+            } else {
+              openList();
+              inputRef.current?.focus();
+            }
+          }}
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 disabled:cursor-not-allowed",
+            compact ? "right-2.5 text-ink-faint" : "right-3.5 text-gray-400 dark:text-ink-muted",
+          )}
+        >
+          <ChevronDownIcon className={cn(compact ? "h-3.5 w-3.5" : "h-4 w-4", "transition-transform", isOpen && "rotate-180")} />
+        </button>
+
+        {isOpen && (
+          <ul
+            id={listboxId}
+            role="listbox"
+            className="absolute z-20 mt-1.5 max-h-64 w-full min-w-[12rem] overflow-auto rounded-xl border border-gray-300 bg-white py-1.5 shadow-lg dark:border-surface-border dark:bg-surface-card"
           >
-            {placeholder && (
-              <option value="" disabled>
-                {placeholder}
-              </option>
+            {filteredOptions.length === 0 && (
+              <li className="px-4 py-2.5 text-sm text-gray-500 dark:text-ink-muted">No matches</li>
             )}
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
+            {filteredOptions.map((option, index) => (
+              <li
+                key={option.value}
+                id={`${listboxId}-option-${index}`}
+                role="option"
+                aria-selected={option.value === value}
+                // mousedown (not click) so this fires before the input's
+                // onBlur closes the list.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  commit(option);
+                }}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={cn(
+                  "cursor-pointer px-4 py-2 text-sm text-gray-900 dark:text-ink",
+                  index === highlightedIndex && "bg-primary-500/10",
+                  option.value === value && "font-medium",
+                )}
+              >
                 {option.label}
-              </option>
+              </li>
             ))}
-          </select>
-          <ChevronDownIcon className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-ink-muted" />
-        </div>
-        {hint && !error && (
-          <p id={hintId} className="text-xs text-gray-500 dark:text-ink-muted">
-            {hint}
-          </p>
-        )}
-        {error && (
-          <p id={errorId} className="text-xs text-danger-600 dark:text-danger-400">
-            {error}
-          </p>
+          </ul>
         )}
       </div>
-    );
-  },
-);
-
-Select.displayName = "Select";
+      {hint && !error && (
+        <p id={hintId} className="text-xs text-gray-500 dark:text-ink-muted">
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p id={errorId} className="text-xs text-danger-600 dark:text-danger-400">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
