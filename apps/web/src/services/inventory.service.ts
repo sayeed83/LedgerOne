@@ -1,4 +1,12 @@
-import type { CreateUnitRequestDto, UnitResponseDto, UpdateUnitRequestDto } from "@ledgerone/shared-types";
+import type {
+  CreateProductRequestDto,
+  CreateUnitRequestDto,
+  ProductCategoryResponseDto,
+  ProductResponseDto,
+  UnitResponseDto,
+  UpdateProductRequestDto,
+  UpdateUnitRequestDto,
+} from "@ledgerone/shared-types";
 import { apiClient } from "./api-client";
 
 interface Envelope<T> {
@@ -41,5 +49,44 @@ export async function createUnit(payload: CreateUnitRequestDto): Promise<UnitRes
 
 export async function updateUnit(unitUuid: string, payload: UpdateUnitRequestDto): Promise<UnitResponseDto> {
   const response = await apiClient.put<Envelope<UnitResponseDto>>(`/inventory/units/${unitUuid}`, payload);
+  return response.data.data;
+}
+
+// --- Product Category (minimal, read-only) ---
+// Product Category has no frontend of its own yet — this one read method
+// exists only so Product's own ProductCategorySelect can list Product
+// Categories for a Company, not as part of a Product Category frontend.
+
+export async function listProductCategoriesByCompany(companyUuid: string): Promise<ProductCategoryResponseDto[]> {
+  const response = await apiClient.get<Envelope<ProductCategoryResponseDto[]>>("/inventory/product-categories", {
+    params: { companyUuid },
+  });
+  return response.data.data;
+}
+
+// --- Product ---
+
+export async function listProductsByCompany(companyUuid: string): Promise<ProductResponseDto[]> {
+  const response = await apiClient.get<Envelope<ProductResponseDto[]>>("/inventory/products", {
+    params: { companyUuid },
+  });
+  return response.data.data;
+}
+
+export async function getProduct(productUuid: string): Promise<ProductResponseDto> {
+  const response = await apiClient.get<Envelope<ProductResponseDto>>(`/inventory/products/${productUuid}`);
+  return response.data.data;
+}
+
+export async function createProduct(payload: CreateProductRequestDto): Promise<ProductResponseDto> {
+  const response = await apiClient.post<Envelope<ProductResponseDto>>("/inventory/products", payload);
+  return response.data.data;
+}
+
+export async function updateProduct(
+  productUuid: string,
+  payload: UpdateProductRequestDto,
+): Promise<ProductResponseDto> {
+  const response = await apiClient.put<Envelope<ProductResponseDto>>(`/inventory/products/${productUuid}`, payload);
   return response.data.data;
 }

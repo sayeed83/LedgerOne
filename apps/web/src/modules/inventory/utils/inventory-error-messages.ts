@@ -9,6 +9,8 @@ const INVENTORY_ERROR_MESSAGES: Record<string, string> = {
   INV_DUPLICATE_PRODUCT_CATEGORY_NAME: "A Product Category with this name already exists at this hierarchy level.",
   INV_UNIT_NOT_FOUND: "This Unit could not be found. It may have been removed.",
   INV_INVALID_UNIT_CONVERSION_FACTOR_VALUE: "Conversion factor must be a positive number.",
+  INV_PRODUCT_NOT_FOUND: "This Product could not be found. It may have been removed.",
+  INV_DUPLICATE_PRODUCT_CODE: "A Product with this code already exists in this Company.",
   INV_DOMAIN_ERROR: "Please check the highlighted fields and try again.",
   VALIDATION_ERROR: "Please check the highlighted fields and try again.",
   NETWORK_ERROR: "Unable to reach the server. Check your connection and try again.",

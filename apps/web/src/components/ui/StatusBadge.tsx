@@ -25,6 +25,8 @@ const VARIANT_BY_STATUS: Record<string, BadgeVariant> = {
   PENDING_APPROVAL: "warning",
   POSTED: "success",
   REVERSED: "danger",
+  // Inventory module statuses (Product, Ch.34.5) — same one-map-platform-wide rule (FP6).
+  DISCONTINUED: "danger",
 };
 
 function toLabel(status: string): string {
