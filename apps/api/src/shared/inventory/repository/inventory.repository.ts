@@ -12,6 +12,7 @@ import {
   Unit as UnitModel,
   Product as ProductModel,
   Warehouse as WarehouseModel,
+  Stock as StockModel,
   ProductStatus as PrismaProductStatus,
   WarehouseStatus as PrismaWarehouseStatus,
 } from "../../../database/generated/client";
@@ -23,6 +24,7 @@ import {
 import { Unit, CreateUnitProps, UpdateUnitProps } from "../domain/entities/unit.entity";
 import { Product, CreateProductProps, UpdateProductProps } from "../domain/entities/product.entity";
 import { Warehouse, CreateWarehouseProps, UpdateWarehouseProps } from "../domain/entities/warehouse.entity";
+import { Stock, CreateStockProps, UpdateStockProps } from "../domain/entities/stock.entity";
 import { ProductStatus } from "../domain/enums/product-status.enum";
 import { WarehouseStatus } from "../domain/enums/warehouse-status.enum";
 import {
@@ -30,6 +32,7 @@ import {
   UnitNotFoundError,
   ProductNotFoundError,
   WarehouseNotFoundError,
+  StockNotFoundError,
 } from "../domain/errors/inventory.errors";
 import { IInventoryRepository, RepositoryTransaction } from "../domain/interfaces/inventory-repository.interface";
 
@@ -108,6 +111,28 @@ function toWarehouseDomain(row: WarehouseModel): Warehouse {
     row.name,
     row.description,
     row.status as unknown as WarehouseStatus,
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+/// `.toFixed()` (not `.toString()`) guarantees plain fixed-point decimal
+/// notation, never exponential notation, mirroring `toUnitDomain`'s own
+/// `conversionFactor` mapping.
+function toStockDomain(row: StockModel): Stock {
+  return new Stock(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.companyUuid,
+    row.warehouseUuid,
+    row.productId,
+    row.quantityOnHand.toFixed(),
+    row.quantityReserved.toFixed(),
+    row.quantityAvailable.toFixed(),
     row.createdAt,
     row.updatedAt,
     row.createdBy,
@@ -429,5 +454,80 @@ export class PrismaInventoryRepository implements IInventoryRepository {
       orderBy: { name: "asc" },
     });
     return rows.map(toWarehouseDomain);
+  }
+
+  // Stock is tenant-owned (06_DATABASE_STANDARDS.md MT-001) — every query
+  // below asserts `tenantId` explicitly and independently, never trusting a
+  // previously-resolved row (MT-002, Ch.6.4's worked example). `id` is
+  // never accepted from outside this file (PK-003) — mutations key on
+  // `(tenantId, uuid)`. `companyUuid`/`warehouseUuid` are uuid-reference
+  // fields (FK-002) and `productId` is a real, in-module FK
+  // (inventory.prisma) — none validated for existence here (a future
+  // Business-layer concern, mirroring Warehouse's own handling of
+  // `branchUuid`).
+
+  async createStock(tenantId: bigint, props: CreateStockProps, tx?: RepositoryTransaction): Promise<Stock> {
+    const row = await this.client(tx).stock.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        companyUuid: props.companyUuid,
+        warehouseUuid: props.warehouseUuid,
+        productId: props.productId,
+        quantityOnHand: props.quantityOnHand ?? undefined,
+        quantityReserved: props.quantityReserved ?? undefined,
+        quantityAvailable: props.quantityAvailable ?? undefined,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toStockDomain(row);
+  }
+
+  async updateStock(tenantId: bigint, uuid: string, props: UpdateStockProps, tx?: RepositoryTransaction): Promise<Stock> {
+    const client = this.client(tx);
+    const { count } = await client.stock.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: {
+        quantityOnHand: props.quantityOnHand,
+        quantityReserved: props.quantityReserved,
+        quantityAvailable: props.quantityAvailable,
+        updatedBy: props.updatedBy ?? undefined,
+      },
+    });
+    if (count === 0) {
+      throw new StockNotFoundError(uuid);
+    }
+    const row = await client.stock.findFirst({ where: { tenantId, uuid } });
+    return toStockDomain(row as StockModel);
+  }
+
+  async findStockByUuid(tenantId: bigint, uuid: string): Promise<Stock | null> {
+    const row = await prisma.stock.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toStockDomain(row) : null;
+  }
+
+  async findStockByWarehouseAndProduct(tenantId: bigint, warehouseUuid: string, productId: bigint): Promise<Stock | null> {
+    const row = await prisma.stock.findFirst({
+      where: { tenantId, warehouseUuid, productId, deletedAt: null },
+    });
+    return row ? toStockDomain(row) : null;
+  }
+
+  async listStocksByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<Stock[]> {
+    const rows = await prisma.stock.findMany({
+      where: { tenantId, warehouseUuid, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toStockDomain);
+  }
+
+  async listStocksByCompany(tenantId: bigint, companyUuid: string): Promise<Stock[]> {
+    const rows = await prisma.stock.findMany({
+      where: { tenantId, companyUuid, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toStockDomain);
   }
 }

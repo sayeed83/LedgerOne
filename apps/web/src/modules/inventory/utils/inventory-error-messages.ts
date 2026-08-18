@@ -14,6 +14,8 @@ const INVENTORY_ERROR_MESSAGES: Record<string, string> = {
   INV_WAREHOUSE_NOT_FOUND: "This Warehouse could not be found. It may have been removed.",
   INV_DUPLICATE_WAREHOUSE_CODE: "A Warehouse with this code already exists in this Branch.",
   INV_DUPLICATE_WAREHOUSE_NAME: "A Warehouse with this name already exists in this Branch.",
+  INV_STOCK_NOT_FOUND: "This Stock record could not be found. It may have been removed.",
+  INV_STOCK_ALREADY_EXISTS: "A Stock record already exists for this Warehouse and Product.",
   INV_DOMAIN_ERROR: "Please check the highlighted fields and try again.",
   VALIDATION_ERROR: "Please check the highlighted fields and try again.",
   NETWORK_ERROR: "Unable to reach the server. Check your connection and try again.",

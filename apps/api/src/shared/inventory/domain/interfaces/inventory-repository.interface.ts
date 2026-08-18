@@ -61,10 +61,20 @@
 // validation, Branch-existence validation, or stock-based deactivation rule
 // (WHS-002) is implemented here — persistence only, all Business-layer
 // concerns for a later milestone.
+//
+// Stock (Ch.38) is likewise tenant-owned (MT-001) with cross-module/
+// in-module uuid-reference fields `companyUuid`/`warehouseUuid` (FK-002, no
+// DB-level FK) and a real, in-module FK `productId` to this module's own
+// Product. `findStockByWarehouseAndProduct` mirrors STK-003's own natural
+// key (at most one Stock row per Product per Warehouse). No on-hand/
+// reserved/available arithmetic (STK-001), negative-stock prevention, or
+// duplicate-Stock prevention is implemented here — persistence only, all
+// Business-layer concerns for a later milestone.
 import { ProductCategory, CreateProductCategoryProps, UpdateProductCategoryProps } from "../entities/product-category.entity";
 import { Unit, CreateUnitProps, UpdateUnitProps } from "../entities/unit.entity";
 import { Product, CreateProductProps, UpdateProductProps } from "../entities/product.entity";
 import { Warehouse, CreateWarehouseProps, UpdateWarehouseProps } from "../entities/warehouse.entity";
+import { Stock, CreateStockProps, UpdateStockProps } from "../entities/stock.entity";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -129,4 +139,14 @@ export interface IInventoryRepository {
   listWarehousesByBranch(tenantId: bigint, branchUuid: string): Promise<Warehouse[]>;
   /** Every Warehouse for the Tenant, across every Branch. */
   listWarehousesByTenant(tenantId: bigint): Promise<Warehouse[]>;
+
+  createStock(tenantId: bigint, props: CreateStockProps, tx?: RepositoryTransaction): Promise<Stock>;
+  updateStock(tenantId: bigint, uuid: string, props: UpdateStockProps, tx?: RepositoryTransaction): Promise<Stock>;
+  findStockByUuid(tenantId: bigint, uuid: string): Promise<Stock | null>;
+  /** STK-003's own natural key — at most one (non-deleted) Stock row per Product per Warehouse. */
+  findStockByWarehouseAndProduct(tenantId: bigint, warehouseUuid: string, productId: bigint): Promise<Stock | null>;
+  /** Every Stock row belonging to a single Warehouse. */
+  listStocksByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<Stock[]>;
+  /** Every Stock row belonging to a single Company, across every Warehouse. */
+  listStocksByCompany(tenantId: bigint, companyUuid: string): Promise<Stock[]>;
 }

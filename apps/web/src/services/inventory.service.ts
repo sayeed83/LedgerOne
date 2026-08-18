@@ -1,11 +1,14 @@
 import type {
   CreateProductRequestDto,
+  CreateStockRequestDto,
   CreateUnitRequestDto,
   CreateWarehouseRequestDto,
   ProductCategoryResponseDto,
   ProductResponseDto,
+  StockResponseDto,
   UnitResponseDto,
   UpdateProductRequestDto,
+  UpdateStockRequestDto,
   UpdateUnitRequestDto,
   UpdateWarehouseRequestDto,
   WarehouseResponseDto,
@@ -121,5 +124,29 @@ export async function updateWarehouse(
     `/inventory/warehouses/${warehouseUuid}`,
     payload,
   );
+  return response.data.data;
+}
+
+// --- Stock ---
+
+export async function listStocksByWarehouse(warehouseUuid: string): Promise<StockResponseDto[]> {
+  const response = await apiClient.get<Envelope<StockResponseDto[]>>("/inventory/stocks", {
+    params: { warehouseUuid },
+  });
+  return response.data.data;
+}
+
+export async function getStock(stockUuid: string): Promise<StockResponseDto> {
+  const response = await apiClient.get<Envelope<StockResponseDto>>(`/inventory/stocks/${stockUuid}`);
+  return response.data.data;
+}
+
+export async function createStock(payload: CreateStockRequestDto): Promise<StockResponseDto> {
+  const response = await apiClient.post<Envelope<StockResponseDto>>("/inventory/stocks", payload);
+  return response.data.data;
+}
+
+export async function updateStock(stockUuid: string, payload: UpdateStockRequestDto): Promise<StockResponseDto> {
+  const response = await apiClient.put<Envelope<StockResponseDto>>(`/inventory/stocks/${stockUuid}`, payload);
   return response.data.data;
 }

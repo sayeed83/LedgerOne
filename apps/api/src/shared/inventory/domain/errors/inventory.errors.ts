@@ -71,3 +71,17 @@ export class DuplicateWarehouseNameError extends DomainError {
     super(`Warehouse '${warehouseName}' already exists for Branch '${branchUuid}'.`);
   }
 }
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Stock does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateStock` on zero rows matched (`updateMany`+refetch pattern). */
+export class StockNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Stock '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createStock`/`updateStock` when another (non-deleted) Stock row already exists for the same Warehouse/Product pair (00_BUSINESS_RULES.md Ch.38.3/STK-003 — "Stock is tracked independently per Product per Warehouse"), mirroring `findStockByWarehouseAndProduct`'s own natural key. */
+export class StockAlreadyExistsError extends DomainError {
+  constructor(public readonly warehouseUuid: string, public readonly productId: bigint) {
+    super(`Stock already exists for Warehouse '${warehouseUuid}' and Product '${productId}'.`);
+  }
+}
