@@ -7,8 +7,8 @@
 // `module.manifest.ts` to decide what to mount) isn't built yet — the
 // manifests now exist and describe each module's public contract, but this
 // still registers each completed module's router directly, by name.
-// Authentication, Organization, User Management, Authorization, and
-// Accounting (Financial Year, Fiscal Period) are the only modules
+// Authentication, Organization, User Management, Authorization,
+// Accounting, and Inventory (Product Category) are the only modules
 // implemented so far.
 //
 // jwt-auth + current-tenant are mounted ahead of every module except
@@ -31,6 +31,7 @@ import { createDefaultOrganizationRouter } from "./shared/organization";
 import { createDefaultUserManagementRouter } from "./shared/user-management";
 import { createDefaultAuthorizationRouter } from "./shared/authorization";
 import { createDefaultAccountingRouter } from "./shared/accounting";
+import { createDefaultInventoryRouter } from "./shared/inventory";
 import { createJwtAuthMiddleware } from "./common/middleware/jwt-auth.middleware";
 import { createCurrentTenantMiddleware } from "./common/middleware/current-tenant.middleware";
 
@@ -63,5 +64,12 @@ export function registerModules(app: Express): void {
     jwtAuthMiddleware,
     createCurrentTenantMiddleware({ rewriteHeaderAs: "decimal" }),
     createDefaultAccountingRouter(),
+  );
+
+  app.use(
+    "/api/v1/inventory",
+    jwtAuthMiddleware,
+    createCurrentTenantMiddleware({ rewriteHeaderAs: "decimal" }),
+    createDefaultInventoryRouter(),
   );
 }

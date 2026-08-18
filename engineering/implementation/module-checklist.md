@@ -29,8 +29,8 @@
 |---|---|---|
 | Foundation | No | Deferred — Platform reprioritized ahead of it |
 | Platform | No | Authentication: spec approved, ADR-001/002 recorded, proceeding to DB design |
-| Accounting | No | |
-| Inventory | No | |
+| Accounting | No | Implementation (all layers, all 9 entities) verified complete in repo 2026-08-18; formal reviews under `../reviews/` and this checklist's gate items not yet recorded |
+| Inventory | No | In progress — Product Category Database layer only |
 | Sales | No | |
 | Purchase | No | |
 | Banking | No | |

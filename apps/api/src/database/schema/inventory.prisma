@@ -1,0 +1,85 @@
+// Inventory module — Prisma schema.
+// Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
+// Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
+// Delete). Business rules: 00_BUSINESS_RULES.md Ch.34 (Products), Ch.35 (Product
+// Categories), Ch.36 (Units), Ch.37 (Warehouses), Ch.38 (Stock), Ch.39 (Stock
+// Movement), Ch.40 (Batch), Ch.41 (Serial Numbers), Ch.42 (Reorder Levels),
+// Ch.43 (Stock Valuation), Ch.44 (Inventory Adjustment).
+//
+// Module ownership: this module owns Product Category (Ch.35), Unit (Ch.36),
+// Product (Ch.34), Warehouse (Ch.37), Stock (Ch.38), Stock Movement (Ch.39),
+// Batch (Ch.40), Serial Number (Ch.41), Reorder Level (Ch.42), Stock
+// Valuation (Ch.43), and Inventory Adjustment (Ch.44).
+//
+// Milestone scope: Product Category (Ch.35) ONLY — Database layer only, per
+// explicit instruction, mirroring how Accounting's Financial Year milestone
+// started (single entity, single layer, then stop). Unit (Ch.36), Product
+// (Ch.34), and every later chapter in this module remain unstarted; no table
+// is modeled for any of them yet. Repository/Business/Presentation/
+// Integration/Frontend layers for Product Category itself are also not
+// started — stop condition for this milestone.
+//
+// Product Category is tenant-owned (`tenant_id`, MT-001) with `companyUuid`
+// as a cross-module reference (FK-002) to Organization's `companies.uuid` —
+// no DB-level FK, mirroring Financial Year's/Account Group's own
+// `companyUuid` pattern. This matches Ch.34.9 ("[Product] Depends on:
+// Company") — Products, and therefore the Categories that classify them, are
+// scoped per Company, consistent with Ch.2.16's "Inventory ... is tracked
+// per Company."
+//
+// `parentProductCategoryId` is a real, in-module RESTRICT self-referential FK
+// (Ch.35.10's ERD: "PRODUCT_CATEGORY ||--o{ PRODUCT_CATEGORY : may have
+// sub-categories"), mirroring Account Group's own self-referential hierarchy
+// (Ch.18.7 AGP-003).
+//
+// `defaultTaxGroupUuid` is a cross-module reference (FK-002, no DB-level FK)
+// to Accounting's `tax_groups.uuid` (Ch.67) — the category-level default Tax
+// Group Ch.35.3/PCT-002 describes ("Category-level defaults... apply to a
+// Product only if the Product does not explicitly override them").
+//
+// Handbook Deviation (flagged, not guessed): Ch.35.3 also names a
+// category-level "default Unit of Measure" — NOT modeled here, since Unit
+// (Ch.36) has no table yet in this codebase; adding a column referencing a
+// nonexistent entity would be invention. To be added once Unit has its own
+// Database milestone, mirroring how Journal Entry's Voucher/Cost Center
+// references were deferred for the same reason.
+//
+// `name` uniqueness "within its hierarchy level" (Ch.35.8) is only partially
+// enforced by `uq_product_categories_company_parent_name_deleted_at` below —
+// MySQL's unique index treats every NULL `parent_product_category_id` as
+// distinct, so two top-level (root) Categories under the same Company could
+// still share a name without violating this constraint. True sibling-name
+// uniqueness (including at the root level) is deferred to a later
+// Business-layer milestone, mirroring how Financial Year's own overlap
+// validation was only partially DB-protected and finished at the Business
+// layer.
+model ProductCategory {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Product Category name (00_BUSINESS_RULES.md Ch.35.1) — intended to be unique within its hierarchy level (Ch.35.8); see the file-level Handbook Deviation note on the partial DB constraint below.
+  name String @db.VarChar(100) @map("name")
+
+  /// Self-referential parent for nested Categories (Ch.35.1/35.10 "may have sub-categories").
+  parentProductCategoryId BigInt?           @db.UnsignedBigInt @map("parent_product_category_id")
+  parentProductCategory   ProductCategory?  @relation("ProductCategoryHierarchy", fields: [parentProductCategoryId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  childProductCategories  ProductCategory[] @relation("ProductCategoryHierarchy")
+
+  /// Cross-module reference to Accounting's `tax_groups.uuid` (Ch.67) — category-level default Tax Group (Ch.35.3/PCT-002), FK-002, no DB-level FK. A Product may override this (Ch.35.12).
+  defaultTaxGroupUuid String? @db.Char(36) @map("default_tax_group_uuid")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([companyUuid, parentProductCategoryId, name, deletedAt], map: "uq_product_categories_company_parent_name_deleted_at")
+  @@index([tenantId, companyUuid], map: "idx_product_categories_tenant_company")
+  @@index([companyUuid, parentProductCategoryId], map: "idx_product_categories_company_parent")
+  @@map("product_categories")
+}

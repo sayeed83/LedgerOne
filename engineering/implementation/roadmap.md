@@ -15,8 +15,8 @@
 | 00 | Setup | Repo, tooling, environment scaffolding | Done |
 | 01 | Foundation | Core domain primitives, ledger fundamentals | Not Started |
 | 02 | Platform | Auth, tenancy, config, observability | In Progress |
-| 03 | Accounting | Chart of accounts, journal entries, GL | Not Started |
-| 04 | Inventory | Items, stock, warehouses | Not Started |
+| 03 | Accounting | Chart of accounts, journal entries, GL | Done |
+| 04 | Inventory | Items, stock, warehouses | In Progress |
 | 05 | Sales | Customers, sales orders, invoices | Not Started |
 | 06 | Purchase | Vendors, purchase orders, bills | Not Started |
 | 07 | Banking | Bank accounts, reconciliation | Not Started |
