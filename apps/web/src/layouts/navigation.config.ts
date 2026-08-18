@@ -40,6 +40,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   { label: "Journal Entries", href: "/accounting/journal-entries", icon: BookOpenIcon },
   { label: "Ledger", href: "/accounting/ledger", icon: ListIcon },
   { label: "Reports", href: "/accounting/reports", icon: BarChartIcon },
+  { label: "Units of Measure", href: "/inventory/units", icon: LayersIcon },
 ];
 
 export interface BreadcrumbItem {
@@ -117,6 +118,14 @@ export function getBreadcrumbTrail(pathname: string): BreadcrumbItem[] {
     } else if (rest[0]) {
       trail.push({ label: "Details", href: pathname });
     }
+  }
+
+  // Inventory's own first nested/detail-level route
+  // (`/inventory/units/:unitUuid`), mirroring the User Management branch
+  // above (flat one-level list + one detail route, no further nesting).
+  if (pathname.startsWith("/inventory/units/")) {
+    trail.push({ label: "Units of Measure", href: "/inventory/units" });
+    trail.push({ label: "Details", href: pathname });
   }
 
   return trail;

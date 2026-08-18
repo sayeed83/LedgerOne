@@ -7,7 +7,15 @@
 // being duplicated per controller; this is an interim measure until the
 // real centralized middleware exists, mirroring Accounting's own
 // domain-error-http-mapping.ts exactly.
-import { DomainError, ProductCategoryNotFoundError, DuplicateProductCategoryNameError } from "../../business/inventory-errors";
+import {
+  DomainError,
+  ProductCategoryNotFoundError,
+  DuplicateProductCategoryNameError,
+  UnitNotFoundError,
+  InvalidUnitConversionFactorValueError,
+  ProductNotFoundError,
+  DuplicateProductCodeError,
+} from "../../business/inventory-errors";
 
 export interface HttpErrorMapping {
   status: number;
@@ -20,6 +28,18 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof DuplicateProductCategoryNameError) {
     return { status: 409, code: "INV_DUPLICATE_PRODUCT_CATEGORY_NAME" };
+  }
+  if (error instanceof UnitNotFoundError) {
+    return { status: 404, code: "INV_UNIT_NOT_FOUND" };
+  }
+  if (error instanceof InvalidUnitConversionFactorValueError) {
+    return { status: 422, code: "INV_INVALID_UNIT_CONVERSION_FACTOR_VALUE" };
+  }
+  if (error instanceof ProductNotFoundError) {
+    return { status: 404, code: "INV_PRODUCT_NOT_FOUND" };
+  }
+  if (error instanceof DuplicateProductCodeError) {
+    return { status: 409, code: "INV_DUPLICATE_PRODUCT_CODE" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

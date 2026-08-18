@@ -22,3 +22,31 @@ export class DuplicateProductCategoryNameError extends DomainError {
     super(`Product Category '${productCategoryName}' already exists at this hierarchy level for Company '${companyUuid}'.`);
   }
 }
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Unit does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateUnit` on zero rows matched (`updateMany`+refetch pattern), and by the Business layer when a supplied base Unit cannot be resolved. */
+export class UnitNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Unit '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createUnit`/`updateUnit` when a supplied `conversionFactor` is not a positive number (00_BUSINESS_RULES.md Ch.36.8 — "Conversion factor must be a positive number"). */
+export class InvalidUnitConversionFactorValueError extends DomainError {
+  constructor(public readonly conversionFactor: string) {
+    super(`Unit conversion factor '${conversionFactor}' must be a positive number.`);
+  }
+}
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Product does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateProduct` on zero rows matched (`updateMany`+refetch pattern), and by the Business layer when a supplied Product cannot be resolved. */
+export class ProductNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Product '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createProduct`/`updateProduct` when another (non-deleted) Product in the same Company already uses the same `productCode` (00_BUSINESS_RULES.md Ch.34.7 PRD-001 — "every Product must have a unique identifying code within the Company"). */
+export class DuplicateProductCodeError extends DomainError {
+  constructor(public readonly companyUuid: string, public readonly productCode: string) {
+    super(`Product code '${productCode}' already exists for Company '${companyUuid}'.`);
+  }
+}

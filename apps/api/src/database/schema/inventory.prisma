@@ -11,13 +11,44 @@
 // Batch (Ch.40), Serial Number (Ch.41), Reorder Level (Ch.42), Stock
 // Valuation (Ch.43), and Inventory Adjustment (Ch.44).
 //
-// Milestone scope: Product Category (Ch.35) ONLY — Database layer only, per
-// explicit instruction, mirroring how Accounting's Financial Year milestone
-// started (single entity, single layer, then stop). Unit (Ch.36), Product
-// (Ch.34), and every later chapter in this module remain unstarted; no table
+// Milestone history: Product Category (Ch.35) and Unit (Ch.36) were each
+// carried through their own Database milestones and are complete (see
+// engineering/implementation/current-phase.md) — not modified by this
+// milestone. This milestone adds Product (Ch.34) — Database layer ONLY, per
+// explicit instruction, mirroring how Product Category's/Unit's own first
+// milestones started (single entity, single layer, then stop). Warehouse
+// (Ch.37) and every later chapter in this module remain unstarted; no table
 // is modeled for any of them yet. Repository/Business/Presentation/
-// Integration/Frontend layers for Product Category itself are also not
-// started — stop condition for this milestone.
+// Integration/Frontend layers for Product itself are also not started —
+// stop condition for this milestone.
+//
+// `productCategoryId` and `unitId` are real, in-module RESTRICT foreign keys
+// (FK-001) — NOT the uuid-reference pattern (FK-002), because Product
+// Category and Unit are both owned by this same Inventory module, unlike
+// `companyUuid` (a genuine cross-module reference into Organization). This
+// mirrors ProductCategory's own self-referential FK and Unit's own
+// `baseUnitId` FK, both real in-module FKs targeting `id`.
+//
+// `unitId` is nullable: 00_BUSINESS_RULES.md Ch.34.8 requires a Unit of
+// Measure only for a Stocked Product ("a Stocked Product must specify a Unit
+// of Measure") — a Non-Stocked (service) Product has none. Enforcing "must
+// be set when isStocked is true" is a Business-layer concern (a later
+// milestone), not a DB CHECK constraint, mirroring Unit's own nullable
+// `conversionFactor` (required only when `baseUnitId` is set) reasoning.
+//
+// `productCode` (PRD-001, "unique identifying code within the Company") is
+// unique per Company with `deletedAt` in the constraint (06_DATABASE_
+// STANDARDS.md SD-004) — reusable after soft delete, mirroring Organization's
+// own `companyCode`/`branchCode`/`departmentCode` pattern; no handbook rule
+// forbids reuse the way COA-003/004 does for Chart of Accounts codes.
+//
+// `status` (ProductStatus: Draft/Active/Discontinued) models Ch.34.5's
+// documented lifecycle state diagram exactly, mirroring Role's own
+// `RoleStatus` enum pattern (05_CODING_STANDARDS.md Ch.26.4). PRD-003 ("a
+// Product cannot be Discontinued while it has non-zero Stock on hand") and
+// Ch.34.12's "Stocked classification is fixed once transacted" are both
+// Business-layer validations (later milestones, depend on Stock/Ch.38 which
+// doesn't exist yet) — not enforced at this layer.
 //
 // Product Category is tenant-owned (`tenant_id`, MT-001) with `companyUuid`
 // as a cross-module reference (FK-002) to Organization's `companies.uuid` —
@@ -69,6 +100,9 @@ model ProductCategory {
   parentProductCategory   ProductCategory?  @relation("ProductCategoryHierarchy", fields: [parentProductCategoryId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   childProductCategories  ProductCategory[] @relation("ProductCategoryHierarchy")
 
+  /// Back-relation for Product's real, in-module RESTRICT FK (Ch.34.9) — this milestone's Database layer only, no repository/service reads this relation yet.
+  products Product[]
+
   /// Cross-module reference to Accounting's `tax_groups.uuid` (Ch.67) — category-level default Tax Group (Ch.35.3/PCT-002), FK-002, no DB-level FK. A Product may override this (Ch.35.12).
   defaultTaxGroupUuid String? @db.Char(36) @map("default_tax_group_uuid")
 
@@ -82,4 +116,144 @@ model ProductCategory {
   @@index([tenantId, companyUuid], map: "idx_product_categories_tenant_company")
   @@index([companyUuid, parentProductCategoryId], map: "idx_product_categories_company_parent")
   @@map("product_categories")
+}
+
+// Unit of Measure (00_BUSINESS_RULES.md Ch.36: quantity-measurement
+// convention for a Product, Ch.34 — e.g. Pieces, Kilograms, Liters, Boxes —
+// including conversion factors between related units). Tenant-owned
+// (`tenant_id`, MT-001) with `companyUuid` as a cross-module reference
+// (FK-002) to Organization's `companies.uuid` — no DB-level FK, mirroring
+// Product Category's/Account Group's own `companyUuid` pattern.
+//
+// Ch.36.5 describes Units as "largely platform-provided" reference data
+// "with Company-specific custom units as needed" — the identical
+// platform-template-vs-Company-instance ambiguity Account Group's own
+// Ch.18.5 raised (that milestone's own carried-forward open design
+// question, per `engineering/implementation/current-phase.md`). Resolved
+// here the same way: a plain tenant/company-owned table, not a nullable-
+// tenant platform/tenant hybrid schema — the platform-template seeding
+// workflow remains an explicitly deferred, not-yet-designed mechanism
+// (likely a future seed script populating each Company's own rows), not a
+// schema-level distinction this milestone invents.
+//
+// `baseUnitId` is a real, in-module RESTRICT self-referential FK — Ch.36.1/
+// 36.3's "conversion factor to a defined base unit where applicable" and
+// Ch.36.11's worked example (a "Box of 100" alternate Unit pointing to a
+// "Pieces" base Unit). `null` on a Unit row means that row IS a base unit
+// itself (Ch.36.7 UNT-001's "exactly one base Unit" per Stocked Product is
+// therefore expressed as the Product's own future `baseUnitId` reference,
+// a Ch.34/Product-table concern, not modeled here). `conversionFactor` is
+// likewise nullable — required only when `baseUnitId` is set; Ch.36.8's
+// "must be a positive number" validation is a Business-layer concern (a
+// later milestone), not a DB CHECK constraint. `DECIMAL(20,10)` mirrors
+// Exchange Rate's own `rate` column precision/scale exactly (a ratio, not
+// a currency-precision amount) — no handbook-documented precision/scale
+// exists for a conversion factor either, so this is the same flagged
+// Handbook Deviation carried forward, not a newly invented one.
+model Unit {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Unit name (00_BUSINESS_RULES.md Ch.36.1, e.g. "Pieces", "Kilograms", "Box of 100").
+  name String @db.VarChar(100) @map("name")
+
+  /// Short display symbol (Ch.36.3, e.g. "Pcs", "Kg", "L") — no handbook-specified length; VarChar(20) is a reasonable, undocumented choice mirroring other short-string columns in this schema.
+  symbol String @db.VarChar(20) @map("symbol")
+
+  /// Self-referential base Unit this row converts to (Ch.36.1/36.3/36.11) — null means this row IS a base Unit.
+  baseUnitId BigInt? @db.UnsignedBigInt @map("base_unit_id")
+  baseUnit   Unit?   @relation("UnitConversion", fields: [baseUnitId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  alternateUnits Unit[] @relation("UnitConversion")
+
+  /// Back-relation for Product's real, in-module RESTRICT FK (Ch.34.9) — this milestone's Database layer only, no repository/service reads this relation yet.
+  products Product[]
+
+  /// Conversion factor to `baseUnit` (Ch.36.1/36.3/36.7 UNT-002, e.g. 100 for "Box of 100" -> "Pieces") — required only when `baseUnitId` is set; positivity (Ch.36.8) is a Business-layer concern.
+  conversionFactor Decimal? @db.Decimal(20, 10) @map("conversion_factor")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  /// Partial duplicate-name protection per Company (06_DATABASE_STANDARDS.md SD-004 pattern) — not explicit handbook text, mirroring Tax Group's/Account Group's own identical `uq_..._tenant_company_name_deleted_at` reasoning.
+  @@unique([tenantId, companyUuid, name, deletedAt], map: "uq_units_tenant_company_name_deleted_at")
+  @@index([tenantId, companyUuid], map: "idx_units_tenant_company")
+  @@index([companyUuid], map: "idx_units_company_uuid")
+  @@map("units")
+}
+
+// Product (00_BUSINESS_RULES.md Ch.34: the master-data record describing an
+// item a Company buys, sells, manufactures, or stocks — item name,
+// description, Product Category, Unit of Measure, and Stocked/Non-Stocked
+// classification). Tenant-owned (`tenant_id`, MT-001) with `companyUuid` as
+// a cross-module reference (FK-002) to Organization's `companies.uuid` — no
+// DB-level FK, mirroring Product Category's/Unit's own `companyUuid`
+// pattern, consistent with Ch.34.9 ("Depends on: Company").
+//
+// `productCategoryId`/`unitId` are real, in-module RESTRICT foreign keys
+// (FK-001), not cross-module uuid references — see the file-level note
+// above. `productCategoryId` is required (PCT-001: "Every Product must be
+// assigned to exactly one Product Category"); `unitId` is nullable (Ch.34.8:
+// required only for a Stocked Product, a Business-layer concern).
+//
+// `status` (ProductStatus) models Ch.34.5's Draft → Active → Discontinued
+// lifecycle; transition validation (e.g. PRD-003) is a Business-layer
+// concern, not modeled here.
+model Product {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Unique identifying code within the Company (00_BUSINESS_RULES.md Ch.34.7 PRD-001) — reusable after soft delete (06_DATABASE_STANDARDS.md SD-004), mirroring Organization's own `companyCode`/`branchCode`/`departmentCode` pattern.
+  productCode String @db.VarChar(32) @map("product_code")
+
+  /// Product name (00_BUSINESS_RULES.md Ch.34.3).
+  name String @db.VarChar(150) @map("name")
+
+  /// Free-text item description (Ch.34.3).
+  description String? @db.VarChar(500) @map("description")
+
+  /// Real, in-module RESTRICT FK to this module's own Product Category (Ch.35) — required, PCT-001.
+  productCategoryId BigInt          @db.UnsignedBigInt @map("product_category_id")
+  productCategory   ProductCategory @relation(fields: [productCategoryId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Real, in-module RESTRICT FK to this module's own Unit (Ch.36) — nullable; required only for a Stocked Product (Ch.34.8), a Business-layer concern.
+  unitId BigInt? @db.UnsignedBigInt @map("unit_id")
+  unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Stocked (tracked in Inventory) vs. Non-Stocked (e.g. a service) classification, set at creation (Ch.34.7 PRD-002). Immutability once transacted (Ch.34.12) is a Business-layer concern.
+  isStocked Boolean @map("is_stocked")
+
+  /// Product lifecycle state (00_BUSINESS_RULES.md Ch.34.5): Draft, Active, Discontinued.
+  status ProductStatus @default(DRAFT) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([companyUuid, productCode, deletedAt], map: "uq_products_company_product_code_deleted_at")
+  @@index([tenantId, companyUuid], map: "idx_products_tenant_company")
+  @@index([companyUuid, productCategoryId], map: "idx_products_company_category")
+  @@index([tenantId, companyUuid, status], map: "idx_products_tenant_company_status")
+  @@map("products")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.34.5 Product lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  DISCONTINUED
+
+  @@map("product_status")
 }

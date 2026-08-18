@@ -20,13 +20,38 @@
 // cross-module reference (FK-002) to Accounting's `tax_groups.uuid` — never
 // validated for existence here (a future Business-layer concern).
 //
-// This interface is intentionally scoped to Product Category only this
-// milestone. Unit (Ch.36), Product (Ch.34), and every later Inventory
-// chapter will extend this same interface (and `PrismaInventoryRepository`)
-// in later milestones, mirroring how `IAccountingRepository` grew one
-// entity at a time across Accounting's own Repository milestones — not
-// a separate repository per entity.
+// This interface grows one entity at a time across separate Repository
+// milestones — Product Category (Ch.35) first, Unit (Ch.36) added by this
+// milestone — mirroring how `IAccountingRepository` grew one entity at a
+// time across Accounting's own Repository milestones. Product (Ch.34) and
+// every later Inventory chapter will extend this same interface (and
+// `PrismaInventoryRepository`) in future milestones — not a separate
+// repository per entity.
+//
+// Unit is likewise tenant-owned (MT-001, no convenience exceptions) with a
+// cross-module `companyUuid` reference into Organization. `findUnitByName`/
+// `findUnitBySymbol` are scoped to a single Company (name/symbol have no
+// meaning tenant-wide across different Companies' own unit catalogs,
+// mirroring `findAccountByCode`'s own `(tenantId, companyUuid, code)`
+// natural-key shape). `listBaseUnits` returns only rows with a `null`
+// `baseUnitId` (Ch.36.1/36.11 — a row with no base Unit of its own IS a
+// base Unit) — a plain persistence-level filter, not a business rule.
+//
+// Product (Ch.34) is likewise tenant-owned (MT-001) with a cross-module
+// `companyUuid` reference into Organization; `productCategoryId`/`unitId`
+// are real, in-module foreign keys (inventory.prisma FK-001), accepted as
+// plain bigints with no cross-repository existence validation, mirroring
+// Account's own handling of `accountGroupId`/`parentAccountId`.
+// `findProductByCode`/`findProductByName` are scoped to a single Company
+// (code/name have no meaning tenant-wide across different Companies' own
+// product catalogs), mirroring `findUnitByName`/`findUnitBySymbol`'s own
+// shape. No sibling-name/code-uniqueness validation, Stocked/Unit-required
+// validation (Ch.34.8), or status-transition rule (PRD-003, Ch.34.12) is
+// implemented here — persistence only, all Business-layer concerns for a
+// later milestone.
 import { ProductCategory, CreateProductCategoryProps, UpdateProductCategoryProps } from "../entities/product-category.entity";
+import { Unit, CreateUnitProps, UpdateUnitProps } from "../entities/unit.entity";
+import { Product, CreateProductProps, UpdateProductProps } from "../entities/product.entity";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -53,4 +78,27 @@ export interface IInventoryRepository {
     props: UpdateProductCategoryProps,
     tx?: RepositoryTransaction,
   ): Promise<ProductCategory>;
+
+  createUnit(tenantId: bigint, props: CreateUnitProps, tx?: RepositoryTransaction): Promise<Unit>;
+  updateUnit(tenantId: bigint, uuid: string, props: UpdateUnitProps, tx?: RepositoryTransaction): Promise<Unit>;
+  findUnitByUuid(tenantId: bigint, uuid: string): Promise<Unit | null>;
+  /** Every Unit belonging to a single Company. */
+  listUnitsByCompany(tenantId: bigint, companyUuid: string): Promise<Unit[]>;
+  /** Every Unit in a Company with no `baseUnitId` of its own — i.e. a base Unit (Ch.36.1/36.11). */
+  listBaseUnits(tenantId: bigint, companyUuid: string): Promise<Unit[]>;
+  findUnitByName(tenantId: bigint, companyUuid: string, name: string): Promise<Unit | null>;
+  findUnitBySymbol(tenantId: bigint, companyUuid: string, symbol: string): Promise<Unit | null>;
+
+  createProduct(tenantId: bigint, props: CreateProductProps, tx?: RepositoryTransaction): Promise<Product>;
+  updateProduct(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateProductProps,
+    tx?: RepositoryTransaction,
+  ): Promise<Product>;
+  findProductByUuid(tenantId: bigint, uuid: string): Promise<Product | null>;
+  /** Every Product belonging to a single Company. */
+  listProductsByCompany(tenantId: bigint, companyUuid: string): Promise<Product[]>;
+  findProductByCode(tenantId: bigint, companyUuid: string, productCode: string): Promise<Product | null>;
+  findProductByName(tenantId: bigint, companyUuid: string, name: string): Promise<Product | null>;
 }
