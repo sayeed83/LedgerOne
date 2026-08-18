@@ -20,6 +20,10 @@ import { createProductController } from "./presentation/controllers/v1/create-pr
 import { getProductController } from "./presentation/controllers/v1/get-product.controller";
 import { updateProductController } from "./presentation/controllers/v1/update-product.controller";
 import { listProductsByCompanyController } from "./presentation/controllers/v1/list-products-by-company.controller";
+import { createWarehouseController } from "./presentation/controllers/v1/create-warehouse.controller";
+import { getWarehouseController } from "./presentation/controllers/v1/get-warehouse.controller";
+import { updateWarehouseController } from "./presentation/controllers/v1/update-warehouse.controller";
+import { listWarehousesByBranchController } from "./presentation/controllers/v1/list-warehouses-by-branch.controller";
 
 export function createInventoryRouter(deps: InventoryDependencies): Router {
   const router = Router();
@@ -46,6 +50,12 @@ export function createInventoryRouter(deps: InventoryDependencies): Router {
   router.get("/products", listProductsByCompanyController(deps));
   router.get("/products/:productUuid", getProductController(deps));
   router.put("/products/:productUuid", updateProductController(deps));
+
+  // --- Warehouse ---
+  router.post("/warehouses", createWarehouseController(deps));
+  router.get("/warehouses", listWarehousesByBranchController(deps));
+  router.get("/warehouses/:warehouseUuid", getWarehouseController(deps));
+  router.put("/warehouses/:warehouseUuid", updateWarehouseController(deps));
 
   return router;
 }

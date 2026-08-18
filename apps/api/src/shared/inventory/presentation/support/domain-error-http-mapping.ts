@@ -15,6 +15,9 @@ import {
   InvalidUnitConversionFactorValueError,
   ProductNotFoundError,
   DuplicateProductCodeError,
+  WarehouseNotFoundError,
+  DuplicateWarehouseCodeError,
+  DuplicateWarehouseNameError,
 } from "../../business/inventory-errors";
 
 export interface HttpErrorMapping {
@@ -40,6 +43,15 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof DuplicateProductCodeError) {
     return { status: 409, code: "INV_DUPLICATE_PRODUCT_CODE" };
+  }
+  if (error instanceof WarehouseNotFoundError) {
+    return { status: 404, code: "INV_WAREHOUSE_NOT_FOUND" };
+  }
+  if (error instanceof DuplicateWarehouseCodeError) {
+    return { status: 409, code: "INV_DUPLICATE_WAREHOUSE_CODE" };
+  }
+  if (error instanceof DuplicateWarehouseNameError) {
+    return { status: 409, code: "INV_DUPLICATE_WAREHOUSE_NAME" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

@@ -5,7 +5,9 @@
 import { ProductCategory } from "../../domain/entities/product-category.entity";
 import { Unit } from "../../domain/entities/unit.entity";
 import { Product } from "../../domain/entities/product.entity";
+import { Warehouse } from "../../domain/entities/warehouse.entity";
 import { ProductStatus } from "../../domain/enums/product-status.enum";
+import { WarehouseStatus } from "../../domain/enums/warehouse-status.enum";
 import { IInventoryRepository } from "../../domain/interfaces/inventory-repository.interface";
 
 export function buildProductCategory(overrides: Partial<ProductCategory> = {}): ProductCategory {
@@ -67,6 +69,25 @@ export function buildProduct(overrides: Partial<Product> = {}): Product {
   return Object.assign(Object.create(Product.prototype), base, overrides) as Product;
 }
 
+export function buildWarehouse(overrides: Partial<Warehouse> = {}): Warehouse {
+  const base = new Warehouse(
+    1n,
+    "00000000-0000-0000-0000-000000000004",
+    1n,
+    "00000000-0000-0000-0000-000000000200",
+    "WH-001",
+    "Head Office Warehouse",
+    null,
+    WarehouseStatus.Active,
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(Warehouse.prototype), base, overrides) as Warehouse;
+}
+
 export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepository> {
   return {
     createProductCategory: jest.fn(),
@@ -86,5 +107,11 @@ export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepositor
     listProductsByCompany: jest.fn(),
     findProductByCode: jest.fn(),
     findProductByName: jest.fn(),
+    createWarehouse: jest.fn(),
+    updateWarehouse: jest.fn(),
+    findWarehouseByUuid: jest.fn(),
+    findWarehouseByCode: jest.fn(),
+    listWarehousesByBranch: jest.fn(),
+    listWarehousesByTenant: jest.fn(),
   };
 }

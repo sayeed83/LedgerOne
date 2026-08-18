@@ -49,9 +49,22 @@
 // validation (Ch.34.8), or status-transition rule (PRD-003, Ch.34.12) is
 // implemented here — persistence only, all Business-layer concerns for a
 // later milestone.
+//
+// Warehouse (Ch.37) is likewise tenant-owned (MT-001) but carries
+// `branchUuid`, not `companyUuid`, as its cross-module reference into
+// Organization (FK-002, no DB-level FK): WHS-001/Ch.37.9/37.10 make Branch,
+// not Company, Warehouse's real parent (see inventory.prisma's own
+// file-level Handbook Deviation note from the Database milestone).
+// `findWarehouseByCode` is scoped to a single Branch (Ch.37.8's own
+// per-Branch uniqueness), mirroring `findProductByCode`'s own
+// `(tenantId, companyUuid, code)` shape. No sibling-name/code-uniqueness
+// validation, Branch-existence validation, or stock-based deactivation rule
+// (WHS-002) is implemented here — persistence only, all Business-layer
+// concerns for a later milestone.
 import { ProductCategory, CreateProductCategoryProps, UpdateProductCategoryProps } from "../entities/product-category.entity";
 import { Unit, CreateUnitProps, UpdateUnitProps } from "../entities/unit.entity";
 import { Product, CreateProductProps, UpdateProductProps } from "../entities/product.entity";
+import { Warehouse, CreateWarehouseProps, UpdateWarehouseProps } from "../entities/warehouse.entity";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -101,4 +114,19 @@ export interface IInventoryRepository {
   listProductsByCompany(tenantId: bigint, companyUuid: string): Promise<Product[]>;
   findProductByCode(tenantId: bigint, companyUuid: string, productCode: string): Promise<Product | null>;
   findProductByName(tenantId: bigint, companyUuid: string, name: string): Promise<Product | null>;
+
+  createWarehouse(tenantId: bigint, props: CreateWarehouseProps, tx?: RepositoryTransaction): Promise<Warehouse>;
+  updateWarehouse(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateWarehouseProps,
+    tx?: RepositoryTransaction,
+  ): Promise<Warehouse>;
+  findWarehouseByUuid(tenantId: bigint, uuid: string): Promise<Warehouse | null>;
+  /** Scoped to a single Branch (`warehouseCode` has no meaning tenant-wide across different Branches' own warehouse listings), mirroring `findProductByCode`'s own `(tenantId, companyUuid, code)` shape. */
+  findWarehouseByCode(tenantId: bigint, branchUuid: string, warehouseCode: string): Promise<Warehouse | null>;
+  /** Every Warehouse belonging to a single Branch (WHS-001). */
+  listWarehousesByBranch(tenantId: bigint, branchUuid: string): Promise<Warehouse[]>;
+  /** Every Warehouse for the Tenant, across every Branch. */
+  listWarehousesByTenant(tenantId: bigint): Promise<Warehouse[]>;
 }

@@ -16,11 +16,15 @@
 // engineering/implementation/current-phase.md) — not modified by this
 // milestone. This milestone adds Product (Ch.34) — Database layer ONLY, per
 // explicit instruction, mirroring how Product Category's/Unit's own first
-// milestones started (single entity, single layer, then stop). Warehouse
-// (Ch.37) and every later chapter in this module remain unstarted; no table
-// is modeled for any of them yet. Repository/Business/Presentation/
-// Integration/Frontend layers for Product itself are also not started —
-// stop condition for this milestone.
+// milestones started (single entity, single layer, then stop). A later
+// revision added Warehouse (Ch.37) — Database layer ONLY, same
+// single-entity, single-layer, then-stop pattern. This revision adds Stock
+// (Ch.38) — Database layer ONLY, the current on-hand-inventory snapshot per
+// Product per Warehouse; Stock Movement (Ch.39) and every later chapter in
+// this module remain unstarted; no table is modeled for any of them yet.
+// Repository/Business/Presentation/Integration/Frontend layers for Product,
+// Warehouse, and Stock are also not started — stop condition for this
+// milestone.
 //
 // `productCategoryId` and `unitId` are real, in-module RESTRICT foreign keys
 // (FK-001) — NOT the uuid-reference pattern (FK-002), because Product
@@ -230,6 +234,9 @@ model Product {
   unitId BigInt? @db.UnsignedBigInt @map("unit_id")
   unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
+  /// Back-relation for Stock's real, in-module RESTRICT FK (Ch.38.9) — this milestone's Database layer only, no repository/service reads this relation yet.
+  stocks Stock[]
+
   /// Stocked (tracked in Inventory) vs. Non-Stocked (e.g. a service) classification, set at creation (Ch.34.7 PRD-002). Immutability once transacted (Ch.34.12) is a Business-layer concern.
   isStocked Boolean @map("is_stocked")
 
@@ -256,4 +263,162 @@ enum ProductStatus {
   DISCONTINUED
 
   @@map("product_status")
+}
+
+// Warehouse (00_BUSINESS_RULES.md Ch.37: a physical stock-keeping location
+// within a Branch where Inventory, Ch.38, is physically held). Tenant-owned
+// (`tenant_id`, MT-001).
+//
+// Handbook Deviation (flagged, not guessed): this milestone's own prompt
+// asked for a `companyUuid` cross-module reference, mirroring Product
+// Category's/Unit's/Product's own `companyUuid` pattern. However,
+// WHS-001 ("Every Warehouse belongs to exactly one Branch") and Ch.37.9's
+// Dependencies ("Depends on: Branch (Ch.3)") and Ch.37.10's ERD
+// (`BRANCH ||--o{ WAREHOUSE : "contains"`) all describe Warehouse as a
+// child of Branch, not of Company directly — Company is only reachable
+// transitively through Branch (Branch itself owns a real `companyId` FK,
+// organization.prisma). Per CLAUDE.md Ch.5/Ch.13/Ch.27 ("the handbook
+// wins... never assume a business rule not documented... ask instead"),
+// this was raised with the user, who confirmed: model the real WHS-001
+// relationship as `branchUuid` (FK-002, cross-module reference to
+// Organization's `branches.uuid` — no DB-level FK, since Branch lives in a
+// different module, mirroring Product/Unit/ProductCategory's own
+// `companyUuid` FK-002 pattern exactly) and drop `companyUuid` entirely,
+// since Company is not Warehouse's direct parent.
+//
+// `warehouseCode` and `name` are each unique per Branch (Ch.37.8: "Warehouse
+// name must be unique within its Branch") including `deletedAt` in the
+// constraint (06_DATABASE_STANDARDS.md SD-004, reusable after soft delete),
+// mirroring Branch's own `branchCode`/`branchName` dual-unique pattern
+// (organization.prisma) rather than Product's single combined-code unique.
+//
+// `status` (WarehouseStatus: Active/Inactive) mirrors Ch.37.5's Business
+// Lifecycle exactly, using the same two-value convention as `BranchStatus`
+// (organization.prisma) rather than Product's three-value lifecycle.
+// WHS-002 ("cannot be deactivated while it holds non-zero Stock") is a
+// Business-layer concern (a later milestone, depends on Stock/Ch.38 which
+// doesn't exist yet) — not enforced at this layer.
+model Warehouse {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `branches.uuid` (FK-002) — no DB-level FK. Warehouse's real parent per WHS-001/Ch.37.9/37.10 (not Company directly — see file-level Handbook Deviation note above).
+  branchUuid String @db.Char(36) @map("branch_uuid")
+
+  /// Unique identifying code within the Branch (mirrors Branch's own `branchCode`/Product's `productCode` convention) — reusable after soft delete (06_DATABASE_STANDARDS.md SD-004).
+  warehouseCode String @db.VarChar(32) @map("warehouse_code")
+
+  /// Warehouse name (00_BUSINESS_RULES.md Ch.37.1) — unique within its Branch (Ch.37.8).
+  name String @db.VarChar(150) @map("name")
+
+  /// Free-text description — no handbook-specified length; VarChar(500) mirrors Product's own `description` column.
+  description String? @db.VarChar(500) @map("description")
+
+  /// Warehouse lifecycle state (00_BUSINESS_RULES.md Ch.37.5): Active, Inactive.
+  status WarehouseStatus @default(ACTIVE) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([branchUuid, warehouseCode, deletedAt], map: "uq_warehouses_branch_warehouse_code_deleted_at")
+  @@unique([branchUuid, name, deletedAt], map: "uq_warehouses_branch_name_deleted_at")
+  @@index([tenantId, branchUuid], map: "idx_warehouses_tenant_branch")
+  @@index([branchUuid], map: "idx_warehouses_branch_uuid")
+  @@index([tenantId, branchUuid, status], map: "idx_warehouses_tenant_branch_status")
+  @@map("warehouses")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.37.5 Warehouse lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4), using the same two-value convention as BranchStatus (organization.prisma).
+enum WarehouseStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("warehouse_status")
+}
+
+// Stock (00_BUSINESS_RULES.md Ch.38: the current, real-time on-hand
+// inventory quantity of a Product, Ch.34, held at a Warehouse, Ch.37, at a
+// given point in time). Tenant-owned (`tenant_id`, MT-001). This table
+// models ONLY the current-quantity snapshot per Ch.38's own Scope ("Owns:
+// the current quantity on hand, quantity reserved... and quantity
+// available... per Product per Warehouse") — the immutable movement history
+// that this snapshot is derived from is Stock Movement's own future table
+// (Ch.39), out of scope for this milestone.
+//
+// `companyUuid` and `warehouseUuid` are both cross-module references
+// (FK-002, no DB-level FK): `companyUuid` to Organization's
+// `companies.uuid`, mirroring Product's/Unit's/Product Category's own
+// pattern; `warehouseUuid` to this same Inventory module's own
+// `warehouses.uuid` — still FK-002, not a real in-module FK, because
+// Warehouse's own identity is a `uuid` cross-module reference target by
+// design (Organization's Branch owns Warehouse's real parent relationship,
+// per Warehouse's own file-level Handbook Deviation note above), and no
+// other in-module entity in this schema targets Warehouse by its internal
+// `id` either. `productId`, by contrast, IS a real, in-module RESTRICT FK
+// (FK-001) to this module's own `products.id` — mirroring
+// `productCategoryId`'s/`unitId`'s own real-FK treatment on Product,
+// since Product is owned by this same Inventory module.
+//
+// `quantityOnHand`/`quantityReserved`/`quantityAvailable` are all
+// `DECIMAL(18,6)` — a fractional-quantity-safe precision/scale (e.g.
+// partial units, weight-based stock) distinct from Unit's own
+// `DECIMAL(20,10)` conversion-factor ratio; no handbook-documented
+// precision/scale exists for a stock quantity either, so this is an
+// explicitly flagged, undocumented but reasonable choice, not a silently
+// invented one. All three default to `0` — a newly created Stock row
+// always has a concrete, known quantity (never an absent/unknown value),
+// mirroring Ch.38.11's example that stock quantities are always exact
+// numbers, not nullable state. STK-001 ("quantity available = on hand
+// minus reserved") is a derived, Business-layer computation, not a DB
+// CHECK/GENERATED constraint — deferred to a later Business-layer
+// milestone, mirroring how every other cross-column arithmetic rule in
+// this schema (e.g. Ch.36.8's conversion-factor positivity) was likewise
+// deferred at its own Database milestone.
+//
+// STK-003 ("Stock is tracked independently per Product per Warehouse — the
+// same Product's Stock in two different Warehouses are entirely separate
+// balances") is enforced here as "at most one (non-deleted) Stock row per
+// Product per Warehouse" via the unique constraint below (including
+// `deletedAt`, SD-004, reusable after soft delete) — mirroring every other
+// natural-key unique constraint in this schema.
+model Stock {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Cross-module reference to this module's own `warehouses.uuid` (FK-002) — no DB-level FK; Warehouse's own identity is a uuid-reference target by design (see Warehouse's own file-level Handbook Deviation note above).
+  warehouseUuid String @db.Char(36) @map("warehouse_uuid")
+
+  /// Real, in-module RESTRICT FK to this module's own Product (Ch.34) — required, STK-003 ("Stock... per Product per Warehouse").
+  productId BigInt  @db.UnsignedBigInt @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Current quantity physically held (Ch.38.3) — DECIMAL(18,6), a flagged undocumented-but-reasonable precision/scale choice (see file-level note above).
+  quantityOnHand Decimal @default(0) @db.Decimal(18, 6) @map("quantity_on_hand")
+
+  /// Quantity allocated to unfulfilled Sales Orders (Ch.38.3/38.11) — not yet enforced against any Sales module, which doesn't exist yet.
+  quantityReserved Decimal @default(0) @db.Decimal(18, 6) @map("quantity_reserved")
+
+  /// Quantity available for new orders (Ch.38.11: on hand minus reserved) — a derived value, not DB-computed; STK-001's arithmetic is a Business-layer concern (a later milestone).
+  quantityAvailable Decimal @default(0) @db.Decimal(18, 6) @map("quantity_available")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([warehouseUuid, productId, deletedAt], map: "uq_stocks_warehouse_product_deleted_at")
+  @@index([tenantId, companyUuid], map: "idx_stocks_tenant_company")
+  @@index([companyUuid, warehouseUuid], map: "idx_stocks_company_warehouse")
+  @@index([warehouseUuid, productId], map: "idx_stocks_warehouse_product")
+  @@index([tenantId, companyUuid, warehouseUuid], map: "idx_stocks_tenant_company_warehouse")
+  @@map("stocks")
 }

@@ -27,6 +27,8 @@ const VARIANT_BY_STATUS: Record<string, BadgeVariant> = {
   REVERSED: "danger",
   // Inventory module statuses (Product, Ch.34.5) — same one-map-platform-wide rule (FP6).
   DISCONTINUED: "danger",
+  // Warehouse (Ch.37.5) reuses the existing ACTIVE/INACTIVE entries above
+  // (already mapped for Branch's own BranchStatus) — no new colors invented.
 };
 
 function toLabel(status: string): string {

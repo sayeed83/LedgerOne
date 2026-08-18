@@ -42,6 +42,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   { label: "Reports", href: "/accounting/reports", icon: BarChartIcon },
   { label: "Units of Measure", href: "/inventory/units", icon: LayersIcon },
   { label: "Products", href: "/inventory/products", icon: ListIcon },
+  { label: "Warehouses", href: "/inventory/warehouses", icon: BuildingIcon },
 ];
 
 export interface BreadcrumbItem {
@@ -133,6 +134,13 @@ export function getBreadcrumbTrail(pathname: string): BreadcrumbItem[] {
   // (`/inventory/products/:productUuid`), mirroring Unit's own branch above.
   if (pathname.startsWith("/inventory/products/")) {
     trail.push({ label: "Products", href: "/inventory/products" });
+    trail.push({ label: "Details", href: pathname });
+  }
+
+  // Warehouse's own first nested/detail-level route
+  // (`/inventory/warehouses/:warehouseUuid`), mirroring Product's own branch above.
+  if (pathname.startsWith("/inventory/warehouses/")) {
+    trail.push({ label: "Warehouses", href: "/inventory/warehouses" });
     trail.push({ label: "Details", href: pathname });
   }
 

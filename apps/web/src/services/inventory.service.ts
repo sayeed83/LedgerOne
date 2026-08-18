@@ -1,11 +1,14 @@
 import type {
   CreateProductRequestDto,
   CreateUnitRequestDto,
+  CreateWarehouseRequestDto,
   ProductCategoryResponseDto,
   ProductResponseDto,
   UnitResponseDto,
   UpdateProductRequestDto,
   UpdateUnitRequestDto,
+  UpdateWarehouseRequestDto,
+  WarehouseResponseDto,
 } from "@ledgerone/shared-types";
 import { apiClient } from "./api-client";
 
@@ -88,5 +91,35 @@ export async function updateProduct(
   payload: UpdateProductRequestDto,
 ): Promise<ProductResponseDto> {
   const response = await apiClient.put<Envelope<ProductResponseDto>>(`/inventory/products/${productUuid}`, payload);
+  return response.data.data;
+}
+
+// --- Warehouse ---
+
+export async function listWarehousesByBranch(branchUuid: string): Promise<WarehouseResponseDto[]> {
+  const response = await apiClient.get<Envelope<WarehouseResponseDto[]>>("/inventory/warehouses", {
+    params: { branchUuid },
+  });
+  return response.data.data;
+}
+
+export async function getWarehouse(warehouseUuid: string): Promise<WarehouseResponseDto> {
+  const response = await apiClient.get<Envelope<WarehouseResponseDto>>(`/inventory/warehouses/${warehouseUuid}`);
+  return response.data.data;
+}
+
+export async function createWarehouse(payload: CreateWarehouseRequestDto): Promise<WarehouseResponseDto> {
+  const response = await apiClient.post<Envelope<WarehouseResponseDto>>("/inventory/warehouses", payload);
+  return response.data.data;
+}
+
+export async function updateWarehouse(
+  warehouseUuid: string,
+  payload: UpdateWarehouseRequestDto,
+): Promise<WarehouseResponseDto> {
+  const response = await apiClient.put<Envelope<WarehouseResponseDto>>(
+    `/inventory/warehouses/${warehouseUuid}`,
+    payload,
+  );
   return response.data.data;
 }

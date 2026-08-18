@@ -50,3 +50,24 @@ export class DuplicateProductCodeError extends DomainError {
     super(`Product code '${productCode}' already exists for Company '${companyUuid}'.`);
   }
 }
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Warehouse does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateWarehouse` on zero rows matched (`updateMany`+refetch pattern), and by the Business layer when a supplied Warehouse cannot be resolved. */
+export class WarehouseNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Warehouse '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createWarehouse`/`updateWarehouse` when another (non-deleted) Warehouse in the same Branch already uses the same `warehouseCode` (00_BUSINESS_RULES.md Ch.37.8 — "Warehouse name must be unique within its Branch," applied identically to the identifying code, mirroring Product's own PRD-001 code-uniqueness treatment). */
+export class DuplicateWarehouseCodeError extends DomainError {
+  constructor(public readonly branchUuid: string, public readonly warehouseCode: string) {
+    super(`Warehouse code '${warehouseCode}' already exists for Branch '${branchUuid}'.`);
+  }
+}
+
+/** Raised by `createWarehouse`/`updateWarehouse` when another (non-deleted) Warehouse in the same Branch already uses the same `name` (00_BUSINESS_RULES.md Ch.37.8 — "Warehouse name must be unique within its Branch"). */
+export class DuplicateWarehouseNameError extends DomainError {
+  constructor(public readonly branchUuid: string, public readonly warehouseName: string) {
+    super(`Warehouse '${warehouseName}' already exists for Branch '${branchUuid}'.`);
+  }
+}

@@ -8,3 +8,4 @@
 // Product (Ch.34) introduced `ProductStatus` — added now, exactly when a
 // Presentation layer first needs it.
 export { ProductStatus } from "../domain/enums/product-status.enum";
+export { WarehouseStatus } from "../domain/enums/warehouse-status.enum";

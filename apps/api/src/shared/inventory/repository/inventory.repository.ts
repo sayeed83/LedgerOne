@@ -11,7 +11,9 @@ import {
   ProductCategory as ProductCategoryModel,
   Unit as UnitModel,
   Product as ProductModel,
+  Warehouse as WarehouseModel,
   ProductStatus as PrismaProductStatus,
+  WarehouseStatus as PrismaWarehouseStatus,
 } from "../../../database/generated/client";
 import {
   ProductCategory,
@@ -20,8 +22,15 @@ import {
 } from "../domain/entities/product-category.entity";
 import { Unit, CreateUnitProps, UpdateUnitProps } from "../domain/entities/unit.entity";
 import { Product, CreateProductProps, UpdateProductProps } from "../domain/entities/product.entity";
+import { Warehouse, CreateWarehouseProps, UpdateWarehouseProps } from "../domain/entities/warehouse.entity";
 import { ProductStatus } from "../domain/enums/product-status.enum";
-import { ProductCategoryNotFoundError, UnitNotFoundError, ProductNotFoundError } from "../domain/errors/inventory.errors";
+import { WarehouseStatus } from "../domain/enums/warehouse-status.enum";
+import {
+  ProductCategoryNotFoundError,
+  UnitNotFoundError,
+  ProductNotFoundError,
+  WarehouseNotFoundError,
+} from "../domain/errors/inventory.errors";
 import { IInventoryRepository, RepositoryTransaction } from "../domain/interfaces/inventory-repository.interface";
 
 function newUuid(): string {
@@ -81,6 +90,24 @@ function toProductDomain(row: ProductModel): Product {
     row.unitId,
     row.isStocked,
     row.status as unknown as ProductStatus,
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+function toWarehouseDomain(row: WarehouseModel): Warehouse {
+  return new Warehouse(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.branchUuid,
+    row.warehouseCode,
+    row.name,
+    row.description,
+    row.status as unknown as WarehouseStatus,
     row.createdAt,
     row.updatedAt,
     row.createdBy,
@@ -324,5 +351,83 @@ export class PrismaInventoryRepository implements IInventoryRepository {
       where: { tenantId, companyUuid, name, deletedAt: null },
     });
     return row ? toProductDomain(row) : null;
+  }
+
+  // Warehouse is tenant-owned (06_DATABASE_STANDARDS.md MT-001) — every
+  // query below asserts `tenantId` explicitly and independently, never
+  // trusting a previously-resolved row (MT-002, Ch.6.4's worked example).
+  // `id` is never accepted from outside this file (PK-003) — mutations key
+  // on `(tenantId, uuid)`. `branchUuid` is a cross-module reference
+  // (FK-002) — not validated for existence here (a future Business-layer
+  // concern, mirroring Product's/Unit's own handling of `companyUuid`).
+
+  async createWarehouse(tenantId: bigint, props: CreateWarehouseProps, tx?: RepositoryTransaction): Promise<Warehouse> {
+    const row = await this.client(tx).warehouse.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        branchUuid: props.branchUuid,
+        warehouseCode: props.warehouseCode,
+        name: props.name,
+        description: props.description ?? null,
+        status: props.status ? (props.status as unknown as PrismaWarehouseStatus) : undefined,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toWarehouseDomain(row);
+  }
+
+  async updateWarehouse(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateWarehouseProps,
+    tx?: RepositoryTransaction,
+  ): Promise<Warehouse> {
+    const client = this.client(tx);
+    const { count } = await client.warehouse.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: {
+        warehouseCode: props.warehouseCode,
+        name: props.name,
+        description: props.description,
+        status: props.status ? (props.status as unknown as PrismaWarehouseStatus) : undefined,
+        updatedBy: props.updatedBy ?? undefined,
+      },
+    });
+    if (count === 0) {
+      throw new WarehouseNotFoundError(uuid);
+    }
+    const row = await client.warehouse.findFirst({ where: { tenantId, uuid } });
+    return toWarehouseDomain(row as WarehouseModel);
+  }
+
+  async findWarehouseByUuid(tenantId: bigint, uuid: string): Promise<Warehouse | null> {
+    const row = await prisma.warehouse.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toWarehouseDomain(row) : null;
+  }
+
+  async findWarehouseByCode(tenantId: bigint, branchUuid: string, warehouseCode: string): Promise<Warehouse | null> {
+    const row = await prisma.warehouse.findFirst({
+      where: { tenantId, branchUuid, warehouseCode, deletedAt: null },
+    });
+    return row ? toWarehouseDomain(row) : null;
+  }
+
+  async listWarehousesByBranch(tenantId: bigint, branchUuid: string): Promise<Warehouse[]> {
+    const rows = await prisma.warehouse.findMany({
+      where: { tenantId, branchUuid, deletedAt: null },
+      orderBy: { name: "asc" },
+    });
+    return rows.map(toWarehouseDomain);
+  }
+
+  async listWarehousesByTenant(tenantId: bigint): Promise<Warehouse[]> {
+    const rows = await prisma.warehouse.findMany({
+      where: { tenantId, deletedAt: null },
+      orderBy: { name: "asc" },
+    });
+    return rows.map(toWarehouseDomain);
   }
 }
