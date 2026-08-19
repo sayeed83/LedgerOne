@@ -160,7 +160,7 @@ export function Select({
   return (
     <div ref={containerRef} className={cn("flex flex-col", compact ? "gap-0" : "gap-1.5")}>
       {!compact && (
-        <label htmlFor={selectId} className="text-sm font-medium text-gray-700 dark:text-ink">
+        <label htmlFor={selectId} className="text-sm font-medium text-ink">
           {label}
         </label>
       )}
@@ -168,7 +168,8 @@ export function Select({
         <span
           className={cn(
             "pointer-events-none absolute inset-y-0 left-0 flex items-center justify-center",
-            compact ? "w-9 text-ink-faint" : "w-11 text-gray-400 dark:text-ink-muted",
+            "w-9",
+            compact ? "text-ink-faint" : "text-ink-muted",
           )}
           aria-hidden="true"
         >
@@ -210,13 +211,10 @@ export function Select({
             onBlur?.();
           }}
           className={cn(
-            "w-full rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
-            compact
-              ? "border-surface-border bg-surface-sunken py-2 pl-9 pr-8 text-sm text-ink placeholder:text-ink-faint"
-              : "bg-white py-3 pl-11 pr-10 text-[15px] text-gray-900 shadow-sm placeholder:text-gray-400 dark:bg-white/[0.03] dark:text-ink dark:placeholder:text-ink-muted/70",
+            "w-full rounded-xl border bg-surface-sunken py-2 pl-9 pr-8 text-sm text-ink transition-colors placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
             error
               ? "border-danger-500 focus:border-danger-500 focus:ring-danger-500/30"
-              : !compact && "border-gray-300 focus:border-primary-500 dark:border-surface-border dark:focus:border-primary-500",
+              : "border-surface-border focus:border-primary-500",
             className,
           )}
         />
@@ -233,22 +231,19 @@ export function Select({
               inputRef.current?.focus();
             }
           }}
-          className={cn(
-            "absolute top-1/2 -translate-y-1/2 disabled:cursor-not-allowed",
-            compact ? "right-2.5 text-ink-faint" : "right-3.5 text-gray-400 dark:text-ink-muted",
-          )}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint disabled:cursor-not-allowed"
         >
-          <ChevronDownIcon className={cn(compact ? "h-3.5 w-3.5" : "h-4 w-4", "transition-transform", isOpen && "rotate-180")} />
+          <ChevronDownIcon className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-180")} />
         </button>
 
         {isOpen && (
           <ul
             id={listboxId}
             role="listbox"
-            className="absolute z-20 mt-1.5 max-h-64 w-full min-w-[12rem] overflow-auto rounded-xl border border-gray-300 bg-white py-1.5 shadow-lg dark:border-surface-border dark:bg-surface-card"
+            className="absolute z-20 mt-1.5 max-h-64 w-full min-w-[12rem] overflow-auto rounded-xl border border-surface-border bg-surface-card py-1.5 shadow-lg"
           >
             {filteredOptions.length === 0 && (
-              <li className="px-4 py-2.5 text-sm text-gray-500 dark:text-ink-muted">No matches</li>
+              <li className="px-4 py-2.5 text-sm text-ink-muted">No matches</li>
             )}
             {filteredOptions.map((option, index) => (
               <li
@@ -264,7 +259,7 @@ export function Select({
                 }}
                 onMouseEnter={() => setHighlightedIndex(index)}
                 className={cn(
-                  "cursor-pointer px-4 py-2 text-sm text-gray-900 dark:text-ink",
+                  "cursor-pointer px-4 py-2 text-sm text-ink",
                   index === highlightedIndex && "bg-primary-500/10",
                   option.value === value && "font-medium",
                 )}
@@ -276,12 +271,12 @@ export function Select({
         )}
       </div>
       {hint && !error && (
-        <p id={hintId} className="text-xs text-gray-500 dark:text-ink-muted">
+        <p id={hintId} className="text-xs text-ink-muted">
           {hint}
         </p>
       )}
       {error && (
-        <p id={errorId} className="text-xs text-danger-600 dark:text-danger-400">
+        <p id={errorId} className="text-xs text-danger-400">
           {error}
         </p>
       )}
