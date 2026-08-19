@@ -12,7 +12,7 @@ export const companyFormSchema = z.object({
     .string()
     .length(3, "Currency code must be exactly 3 letters.")
     .regex(/^[A-Z]{3}$/, "Currency code must be 3 uppercase letters."),
-  country: z.string().min(1, "Country is required."),
+  country: z.string().length(2, "Select a country."),
   timeZone: z.string().min(1, "Time zone is required."),
   financialYearStartMonth: z.coerce.number().int().min(1, "Enter 1-12.").max(12, "Enter 1-12."),
   financialYearStartDay: z.coerce.number().int().min(1, "Enter 1-31.").max(31, "Enter 1-31."),

@@ -13,7 +13,7 @@ export const createBranchRequestSchema = z.object({
   city: z.string().min(1),
   region: z.string().min(1).nullable().optional(),
   postalCode: z.string().min(1).nullable().optional(),
-  countryCode: z.string().min(1),
+  countryCode: z.string().length(2),
   timeZone: z.string().min(1),
 });
 

@@ -9,7 +9,7 @@ export const createCompanyRequestSchema = z.object({
   legalEntityType: z.string().min(1).nullable().optional(),
   taxRegistrationNumber: z.string().min(1),
   baseCurrencyCode: z.string().length(3),
-  country: z.string().min(1),
+  country: z.string().length(2),
   timeZone: z.string().min(1),
   financialYearStartMonth: z.number().int().min(1).max(12),
   financialYearStartDay: z.number().int().min(1).max(31),

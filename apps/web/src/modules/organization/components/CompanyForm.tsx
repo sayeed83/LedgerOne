@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { AuthErrorFieldDetailDto } from "@ledgerone/shared-types";
-import { ErrorAlert, LoadingButton, TextInput } from "@ledgerone/ui";
+import { ErrorAlert, LoadingButton, Select, TextInput } from "@ledgerone/ui";
 import { companyFormSchema, type CompanyFormValues } from "../schemas/company.schema";
+import { DEFAULT_COUNTRY_CODE, ISO_COUNTRY_CODES } from "../constants/countries";
 
 export interface CompanyFormProps {
   defaultValues?: CompanyFormValues;
@@ -23,11 +24,36 @@ const EMPTY_VALUES: CompanyFormValues = {
   legalEntityType: "",
   taxRegistrationNumber: "",
   baseCurrencyCode: "",
-  country: "",
+  country: DEFAULT_COUNTRY_CODE,
   timeZone: "",
   financialYearStartMonth: 1,
   financialYearStartDay: 1,
 };
+
+// Currency/timezone codes come straight from the runtime's own ISO 4217 /
+// IANA tz-database data (the Intl Enumeration API, Baseline-supported) —
+// no hand-maintained list to drift out of date, and (unlike country) no
+// static fallback array is kept alongside it: every browser/Node runtime
+// this app targets already ships both keys.
+const CURRENCY_OPTIONS = Intl.supportedValuesOf("currency")
+  .map((code) => {
+    const name = new Intl.DisplayNames(["en"], { type: "currency" }).of(code);
+    return { value: code, label: name && name !== code ? `${code} — ${name}` : code };
+  })
+  .sort((a, b) => a.value.localeCompare(b.value));
+
+const TIME_ZONE_OPTIONS = Intl.supportedValuesOf("timeZone")
+  .map((zone) => ({ value: zone, label: zone }))
+  .sort((a, b) => a.value.localeCompare(b.value));
+
+// Country *codes* are a static list (constants/countries.ts) — no Intl key
+// enumerates ISO 3166-1 — but display names still come from `Intl
+// .DisplayNames` at render time so they can't drift from it.
+const countryDisplayNames = new Intl.DisplayNames(["en"], { type: "region" });
+const COUNTRY_OPTIONS = ISO_COUNTRY_CODES.map((code) => ({
+  value: code,
+  label: `${countryDisplayNames.of(code) ?? code} (${code})`,
+})).sort((a, b) => a.label.localeCompare(b.label));
 
 // FORM-001: React Hook Form, no ad hoc per-field useState.
 export function CompanyForm({
@@ -41,6 +67,7 @@ export function CompanyForm({
   const {
     register,
     handleSubmit,
+    control,
     setError,
     formState: { errors },
   } = useForm<CompanyFormValues>({
@@ -77,19 +104,47 @@ export function CompanyForm({
           error={errors.taxRegistrationNumber?.message}
           {...register("taxRegistrationNumber")}
         />
-        <TextInput
-          label="Base Currency Code"
-          placeholder="USD"
-          maxLength={3}
-          error={errors.baseCurrencyCode?.message}
-          {...register("baseCurrencyCode")}
+        <Controller
+          name="baseCurrencyCode"
+          control={control}
+          render={({ field }) => (
+            <Select
+              label="Base Currency Code"
+              options={CURRENCY_OPTIONS}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              error={errors.baseCurrencyCode?.message}
+            />
+          )}
         />
-        <TextInput label="Country" error={errors.country?.message} {...register("country")} />
-        <TextInput
-          label="Time Zone"
-          placeholder="Asia/Kolkata"
-          error={errors.timeZone?.message}
-          {...register("timeZone")}
+        <Controller
+          name="country"
+          control={control}
+          render={({ field }) => (
+            <Select
+              label="Country"
+              options={COUNTRY_OPTIONS}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              error={errors.country?.message}
+            />
+          )}
+        />
+        <Controller
+          name="timeZone"
+          control={control}
+          render={({ field }) => (
+            <Select
+              label="Time Zone"
+              options={TIME_ZONE_OPTIONS}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              error={errors.timeZone?.message}
+            />
+          )}
         />
         <TextInput
           label="Financial Year Start Month"

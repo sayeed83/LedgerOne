@@ -10,7 +10,7 @@ export const updateBranchRequestSchema = z.object({
   city: z.string().min(1).optional(),
   region: z.string().min(1).nullable().optional(),
   postalCode: z.string().min(1).nullable().optional(),
-  countryCode: z.string().min(1).optional(),
+  countryCode: z.string().length(2).optional(),
   timeZone: z.string().min(1).optional(),
 });
 
