@@ -198,6 +198,70 @@ describe("Organization routes", () => {
     });
   });
 
+  describe("POST /api/v1/organization/tenants/:tenantUuid/settings", () => {
+    it("returns 404 when the tenant does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findTenantByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${buildTenant().uuid}/settings`)
+        .send({ defaultCurrencyCode: "USD", defaultTimeZone: "UTC", defaultFinancialYearPattern: "APR-MAR" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+
+    it("returns 409 when a settings row already exists", async () => {
+      const deps = buildDeps();
+      const tenant = buildTenant();
+      (deps.repository.findTenantByUuid as jest.Mock).mockResolvedValue(tenant);
+      (deps.repository.getTenantSettings as jest.Mock).mockResolvedValue(buildTenantSettings());
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${tenant.uuid}/settings`)
+        .send({ defaultCurrencyCode: "USD", defaultTimeZone: "UTC", defaultFinancialYearPattern: "APR-MAR" });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ORG_TENANT_SETTINGS_ALREADY_EXISTS");
+    });
+
+    it("returns 201 with the created settings", async () => {
+      const deps = buildDeps();
+      const tenant = buildTenant();
+      const created = buildTenantSettings();
+      (deps.repository.findTenantByUuid as jest.Mock).mockResolvedValue(tenant);
+      (deps.repository.getTenantSettings as jest.Mock).mockResolvedValue(null);
+      (deps.repository.createTenantSettings as jest.Mock).mockResolvedValue(created);
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${tenant.uuid}/settings`)
+        .send({ defaultCurrencyCode: "USD", defaultTimeZone: "UTC", defaultFinancialYearPattern: "APR-MAR" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.defaultCurrencyCode).toBe(created.defaultCurrencyCode);
+    });
+
+    it("returns 422 for a malformed currency code", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${buildTenant().uuid}/settings`)
+        .send({ defaultCurrencyCode: "US", defaultTimeZone: "UTC", defaultFinancialYearPattern: "APR-MAR" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 when required fields are missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${buildTenant().uuid}/settings`)
+        .send({});
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+  });
+
   describe("GET /api/v1/organization/tenants/:tenantUuid/settings", () => {
     it("returns 404 when the settings row does not exist yet", async () => {
       const deps = buildDeps();
@@ -248,6 +312,75 @@ describe("Organization routes", () => {
       const res = await request(buildApp(deps))
         .put(`/api/v1/organization/tenants/${buildTenant().uuid}/settings`)
         .send({ defaultCurrencyCode: "US" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+  });
+
+  describe("POST /api/v1/organization/tenants/:tenantUuid/subscription", () => {
+    it("returns 404 when the tenant does not exist", async () => {
+      const deps = buildDeps();
+      (deps.repository.findTenantByUuid as jest.Mock).mockResolvedValue(null);
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${buildTenant().uuid}/subscription`)
+        .send({
+          planCode: "STANDARD",
+          subscribedModules: ["accounting"],
+          currentPeriodStartsAt: "2026-01-01T00:00:00.000Z",
+          currentPeriodEndsAt: "2026-12-31T23:59:59.999Z",
+        });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("ORG_TENANT_NOT_FOUND");
+    });
+
+    it("returns 409 when a subscription row already exists", async () => {
+      const deps = buildDeps();
+      const tenant = buildTenant();
+      (deps.repository.findTenantByUuid as jest.Mock).mockResolvedValue(tenant);
+      (deps.repository.getTenantSubscription as jest.Mock).mockResolvedValue(buildTenantSubscription());
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${tenant.uuid}/subscription`)
+        .send({
+          planCode: "STANDARD",
+          subscribedModules: ["accounting"],
+          currentPeriodStartsAt: "2026-01-01T00:00:00.000Z",
+          currentPeriodEndsAt: "2026-12-31T23:59:59.999Z",
+        });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("ORG_TENANT_SUBSCRIPTION_ALREADY_EXISTS");
+    });
+
+    it("returns 201 with the created subscription", async () => {
+      const deps = buildDeps();
+      const tenant = buildTenant();
+      const created = buildTenantSubscription();
+      (deps.repository.findTenantByUuid as jest.Mock).mockResolvedValue(tenant);
+      (deps.repository.getTenantSubscription as jest.Mock).mockResolvedValue(null);
+      (deps.repository.createTenantSubscription as jest.Mock).mockResolvedValue(created);
+
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${tenant.uuid}/subscription`)
+        .send({
+          planCode: "STANDARD",
+          subscribedModules: ["accounting"],
+          currentPeriodStartsAt: "2026-01-01T00:00:00.000Z",
+          currentPeriodEndsAt: "2026-12-31T23:59:59.999Z",
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.planCode).toBe(created.planCode);
+    });
+
+    it("returns 422 when required fields are missing", async () => {
+      const deps = buildDeps();
+      const res = await request(buildApp(deps))
+        .post(`/api/v1/organization/tenants/${buildTenant().uuid}/subscription`)
+        .send({});
 
       expect(res.status).toBe(422);
       expect(res.body.error.code).toBe("VALIDATION_ERROR");

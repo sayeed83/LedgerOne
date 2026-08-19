@@ -27,3 +27,15 @@ export interface UpdateTenantSubscriptionRequestDto {
   currentPeriodEndsAt?: string;
   cancelledAt?: string | null;
 }
+
+// Unlike UpdateTenantSubscriptionRequestDto, `status` is deliberately
+// omitted — a new subscription always starts at its schema default
+// (Provisioning); only an update may change it later. Every other field is
+// required — no default plan/module list is documented
+// (00_BUSINESS_RULES.md Ch.1.22 defers subscription self-service).
+export interface CreateTenantSubscriptionRequestDto {
+  planCode: string;
+  subscribedModules: string[];
+  currentPeriodStartsAt: string;
+  currentPeriodEndsAt: string;
+}

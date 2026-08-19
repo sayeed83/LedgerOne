@@ -3,16 +3,20 @@
 import { useState } from "react";
 import {
   Alert,
+  Badge,
   BuildingIcon,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
+  CoinsIcon,
   ConfirmDialog,
   Drawer,
   EmptyState,
+  ListIcon,
   LoadingButton,
   PencilIcon,
+  PlusIcon,
   Skeleton,
   TextInput,
 } from "@ledgerone/ui";
@@ -23,7 +27,17 @@ import { useTenant } from "../hooks/use-tenant";
 import { useCreateTenant } from "../hooks/use-create-tenant";
 import { useUpdateTenant } from "../hooks/use-update-tenant";
 import { useActivateTenant, useDeactivateTenant, useSuspendTenant } from "../hooks/use-tenant-lifecycle";
+import { useCreateTenantSettings, useTenantSettings, useUpdateTenantSettings } from "../hooks/use-tenant-settings";
+import {
+  useCreateTenantSubscription,
+  useTenantSubscription,
+  useUpdateTenantSubscription,
+} from "../hooks/use-tenant-subscription";
 import { TenantForm } from "../components/TenantForm";
+import { TenantSettingsForm } from "../components/TenantSettingsForm";
+import type { TenantSettingsFormValues } from "../schemas/tenant-settings.schema";
+import { TenantSubscriptionForm } from "../components/TenantSubscriptionForm";
+import type { TenantSubscriptionFormValues } from "../schemas/tenant-subscription.schema";
 import { getOrganizationErrorMessage } from "../utils/organization-error-messages";
 import type { ApiError } from "@/services/api-client";
 
@@ -213,6 +227,13 @@ export function TenantScreen() {
         </Card>
       )}
 
+      {tenantQuery.data && (
+        <div className="mt-6 flex flex-col gap-6">
+          <TenantSettingsCard tenantUuid={tenantQuery.data.uuid} />
+          <TenantSubscriptionCard tenantUuid={tenantQuery.data.uuid} />
+        </div>
+      )}
+
       <Drawer
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}
@@ -257,5 +278,243 @@ export function TenantScreen() {
         isConfirming={deactivateTenant.isPending}
       />
     </div>
+  );
+}
+
+// Ch.1.7/ORG-003: a Tenant's organization-wide default settings. A 404 here
+// is an expected, real "not yet provisioned" state — not every Tenant has
+// completed this onboarding step (see current-phase.md's own documented
+// provisioning-gap fix, which added the `POST` endpoint this card's
+// "Set Up Settings" action calls) — rendered as a setup prompt, not an error.
+function TenantSettingsCard({ tenantUuid }: { tenantUuid: string }) {
+  const settingsQuery = useTenantSettings(tenantUuid);
+  const createSettings = useCreateTenantSettings(tenantUuid);
+  const updateSettings = useUpdateTenantSettings(tenantUuid);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const notProvisioned =
+    settingsQuery.isError && (settingsQuery.error?.code as string) === "ORG_TENANT_SETTINGS_NOT_FOUND";
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-500/15 text-primary-400">
+            <ListIcon className="h-5 w-5" />
+          </span>
+          <CardTitle>Organization Settings</CardTitle>
+        </div>
+        {settingsQuery.data && (
+          <LoadingButton
+            variant="secondary"
+            size="sm"
+            isLoading={false}
+            leadingIcon={<PencilIcon className="h-4 w-4" />}
+            onClick={() => setIsFormOpen(true)}
+          >
+            Edit
+          </LoadingButton>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 pt-4">
+        {settingsQuery.isLoading && <Skeleton variant="text" className="w-1/3" />}
+
+        {settingsQuery.isError && !notProvisioned && (
+          <Alert variant="error" message={getOrganizationErrorMessage(settingsQuery.error) ?? "Failed to load settings."} />
+        )}
+
+        {notProvisioned && (
+          <EmptyState
+            icon={<ListIcon className="h-6 w-6" />}
+            title="Settings not set up yet"
+            description="Configure this Tenant's default Currency, Time Zone, and Financial Year pattern (Ch.1.7's onboarding step)."
+            action={
+              <LoadingButton isLoading={false} leadingIcon={<PlusIcon className="h-4 w-4" />} onClick={() => setIsFormOpen(true)}>
+                Set Up Settings
+              </LoadingButton>
+            }
+          />
+        )}
+
+        {settingsQuery.data && (
+          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Default Currency</dt>
+              <dd className="mt-1 text-sm text-ink">{settingsQuery.data.defaultCurrencyCode}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Default Time Zone</dt>
+              <dd className="mt-1 text-sm text-ink">{settingsQuery.data.defaultTimeZone}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Financial Year Pattern</dt>
+              <dd className="mt-1 text-sm text-ink">{settingsQuery.data.defaultFinancialYearPattern}</dd>
+            </div>
+          </dl>
+        )}
+      </CardContent>
+
+      <Drawer
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={settingsQuery.data ? "Edit Settings" : "Set Up Settings"}
+        description="Organization-wide defaults, inherited by every new Company (ORG-003)."
+      >
+        <TenantSettingsForm
+          defaultValues={
+            settingsQuery.data
+              ? {
+                  defaultCurrencyCode: settingsQuery.data.defaultCurrencyCode,
+                  defaultTimeZone: settingsQuery.data.defaultTimeZone,
+                  defaultFinancialYearPattern: settingsQuery.data.defaultFinancialYearPattern,
+                }
+              : undefined
+          }
+          submitLabel={settingsQuery.data ? "Save" : "Set Up Settings"}
+          isSubmitting={createSettings.isPending || updateSettings.isPending}
+          serverError={getOrganizationErrorMessage(createSettings.error ?? updateSettings.error)}
+          fieldErrors={createSettings.error?.details ?? updateSettings.error?.details}
+          onSubmit={(values: TenantSettingsFormValues) => {
+            const mutation = settingsQuery.data ? updateSettings : createSettings;
+            mutation.mutate(values, { onSuccess: () => setIsFormOpen(false) });
+          }}
+        />
+      </Drawer>
+    </Card>
+  );
+}
+
+// Ch.1.4/ORG-004: a Tenant's commercial subscription record. Same
+// not-yet-provisioned handling as TenantSettingsCard above.
+function TenantSubscriptionCard({ tenantUuid }: { tenantUuid: string }) {
+  const subscriptionQuery = useTenantSubscription(tenantUuid);
+  const createSubscription = useCreateTenantSubscription(tenantUuid);
+  const updateSubscription = useUpdateTenantSubscription(tenantUuid);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const notProvisioned =
+    subscriptionQuery.isError && (subscriptionQuery.error?.code as string) === "ORG_TENANT_SUBSCRIPTION_NOT_FOUND";
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-500/15 text-primary-400">
+            <CoinsIcon className="h-5 w-5" />
+          </span>
+          <CardTitle>Subscription</CardTitle>
+          {subscriptionQuery.data && <Badge variant="primary">{subscriptionQuery.data.status}</Badge>}
+        </div>
+        {subscriptionQuery.data && (
+          <LoadingButton
+            variant="secondary"
+            size="sm"
+            isLoading={false}
+            leadingIcon={<PencilIcon className="h-4 w-4" />}
+            onClick={() => setIsFormOpen(true)}
+          >
+            Edit
+          </LoadingButton>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 pt-4">
+        {subscriptionQuery.isLoading && <Skeleton variant="text" className="w-1/3" />}
+
+        {subscriptionQuery.isError && !notProvisioned && (
+          <Alert
+            variant="error"
+            message={getOrganizationErrorMessage(subscriptionQuery.error) ?? "Failed to load subscription."}
+          />
+        )}
+
+        {notProvisioned && (
+          <EmptyState
+            icon={<CoinsIcon className="h-6 w-6" />}
+            title="Subscription not set up yet"
+            description="Set this Tenant's commercial plan and subscribed modules (ORG-004)."
+            action={
+              <LoadingButton isLoading={false} leadingIcon={<PlusIcon className="h-4 w-4" />} onClick={() => setIsFormOpen(true)}>
+                Set Up Subscription
+              </LoadingButton>
+            }
+          />
+        )}
+
+        {subscriptionQuery.data && (
+          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Plan Code</dt>
+              <dd className="mt-1 text-sm text-ink">{subscriptionQuery.data.planCode}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Subscribed Modules</dt>
+              <dd className="mt-1 text-sm text-ink">{subscriptionQuery.data.subscribedModules.join(", ")}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Current Period</dt>
+              <dd className="mt-1 text-sm text-ink">
+                {subscriptionQuery.data.currentPeriodStartsAt.slice(0, 10)} –{" "}
+                {subscriptionQuery.data.currentPeriodEndsAt.slice(0, 10)}
+              </dd>
+            </div>
+          </dl>
+        )}
+      </CardContent>
+
+      <Drawer
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={subscriptionQuery.data ? "Edit Subscription" : "Set Up Subscription"}
+        description="This Tenant's commercial plan and subscribed modules (ORG-004)."
+      >
+        <TenantSubscriptionForm
+          isEditing={Boolean(subscriptionQuery.data)}
+          defaultValues={
+            subscriptionQuery.data
+              ? {
+                  planCode: subscriptionQuery.data.planCode,
+                  subscribedModules: subscriptionQuery.data.subscribedModules.join(", "),
+                  currentPeriodStartsAt: subscriptionQuery.data.currentPeriodStartsAt.slice(0, 10),
+                  currentPeriodEndsAt: subscriptionQuery.data.currentPeriodEndsAt.slice(0, 10),
+                  status: subscriptionQuery.data.status,
+                }
+              : undefined
+          }
+          submitLabel={subscriptionQuery.data ? "Save" : "Set Up Subscription"}
+          isSubmitting={createSubscription.isPending || updateSubscription.isPending}
+          serverError={getOrganizationErrorMessage(createSubscription.error ?? updateSubscription.error)}
+          fieldErrors={createSubscription.error?.details ?? updateSubscription.error?.details}
+          onSubmit={(values: TenantSubscriptionFormValues) => {
+            const subscribedModules = values.subscribedModules
+              .split(",")
+              .map((module) => module.trim())
+              .filter(Boolean);
+
+            if (subscriptionQuery.data) {
+              updateSubscription.mutate(
+                {
+                  planCode: values.planCode,
+                  subscribedModules,
+                  currentPeriodStartsAt: values.currentPeriodStartsAt,
+                  currentPeriodEndsAt: values.currentPeriodEndsAt,
+                  status: values.status,
+                },
+                { onSuccess: () => setIsFormOpen(false) },
+              );
+            } else {
+              createSubscription.mutate(
+                {
+                  planCode: values.planCode,
+                  subscribedModules,
+                  currentPeriodStartsAt: values.currentPeriodStartsAt,
+                  currentPeriodEndsAt: values.currentPeriodEndsAt,
+                },
+                { onSuccess: () => setIsFormOpen(false) },
+              );
+            }
+          }}
+        />
+      </Drawer>
+    </Card>
   );
 }

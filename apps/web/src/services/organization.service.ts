@@ -5,12 +5,18 @@ import type {
   CreateCompanyRequestDto,
   CreateDepartmentRequestDto,
   CreateTenantRequestDto,
+  CreateTenantSettingsRequestDto,
+  CreateTenantSubscriptionRequestDto,
   DepartmentResponseDto,
   TenantResponseDto,
+  TenantSettingsResponseDto,
+  TenantSubscriptionResponseDto,
   UpdateBranchRequestDto,
   UpdateCompanyRequestDto,
   UpdateDepartmentRequestDto,
   UpdateTenantRequestDto,
+  UpdateTenantSettingsRequestDto,
+  UpdateTenantSubscriptionRequestDto,
 } from "@ledgerone/shared-types";
 import { apiClient } from "./api-client";
 
@@ -77,11 +83,73 @@ export async function deactivateTenant(tenantUuid: string): Promise<TenantRespon
   return response.data.data;
 }
 
-// Tenant Settings/Subscription (GET/PUT `/tenants/:tenantUuid/settings` and
-// `/subscription`) are out of this milestone's explicit scope (Tenant,
-// Company, Branch, Department management only) — not wrapped here to avoid
-// shipping unused exports; add them alongside their own screens if/when
-// that milestone is requested.
+// --- Tenant Settings ---
+// Ch.1.7/ORG-003: a Tenant's organization-wide defaults. `createTenantSettings`
+// provisions the initial row (the backend has no auto-provisioning at
+// Tenant-creation time — see current-phase.md's own documented fix) — the
+// Organization Administrator's own onboarding step, not a system default.
+
+export async function createTenantSettings(
+  tenantUuid: string,
+  payload: CreateTenantSettingsRequestDto,
+): Promise<TenantSettingsResponseDto> {
+  const response = await apiClient.post<Envelope<TenantSettingsResponseDto>>(
+    `/organization/tenants/${tenantUuid}/settings`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function getTenantSettings(tenantUuid: string): Promise<TenantSettingsResponseDto> {
+  const response = await apiClient.get<Envelope<TenantSettingsResponseDto>>(
+    `/organization/tenants/${tenantUuid}/settings`,
+  );
+  return response.data.data;
+}
+
+export async function updateTenantSettings(
+  tenantUuid: string,
+  payload: UpdateTenantSettingsRequestDto,
+): Promise<TenantSettingsResponseDto> {
+  const response = await apiClient.put<Envelope<TenantSettingsResponseDto>>(
+    `/organization/tenants/${tenantUuid}/settings`,
+    payload,
+  );
+  return response.data.data;
+}
+
+// --- Tenant Subscription ---
+// Ch.1.4/ORG-004: a Tenant's commercial subscription record. Same
+// provisioning-gap reasoning as Tenant Settings above.
+
+export async function createTenantSubscription(
+  tenantUuid: string,
+  payload: CreateTenantSubscriptionRequestDto,
+): Promise<TenantSubscriptionResponseDto> {
+  const response = await apiClient.post<Envelope<TenantSubscriptionResponseDto>>(
+    `/organization/tenants/${tenantUuid}/subscription`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function getTenantSubscription(tenantUuid: string): Promise<TenantSubscriptionResponseDto> {
+  const response = await apiClient.get<Envelope<TenantSubscriptionResponseDto>>(
+    `/organization/tenants/${tenantUuid}/subscription`,
+  );
+  return response.data.data;
+}
+
+export async function updateTenantSubscription(
+  tenantUuid: string,
+  payload: UpdateTenantSubscriptionRequestDto,
+): Promise<TenantSubscriptionResponseDto> {
+  const response = await apiClient.put<Envelope<TenantSubscriptionResponseDto>>(
+    `/organization/tenants/${tenantUuid}/subscription`,
+    payload,
+  );
+  return response.data.data;
+}
 
 export async function listCompaniesByTenant(tenantUuid: string): Promise<CompanyResponseDto[]> {
   const response = await apiClient.get<Envelope<CompanyResponseDto[]>>(

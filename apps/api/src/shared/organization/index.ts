@@ -19,8 +19,10 @@ import { updateTenantController } from "./presentation/controllers/v1/update-ten
 import { activateTenantController } from "./presentation/controllers/v1/activate-tenant.controller";
 import { suspendTenantController } from "./presentation/controllers/v1/suspend-tenant.controller";
 import { deactivateTenantController } from "./presentation/controllers/v1/deactivate-tenant.controller";
+import { createTenantSettingsController } from "./presentation/controllers/v1/create-tenant-settings.controller";
 import { getTenantSettingsController } from "./presentation/controllers/v1/get-tenant-settings.controller";
 import { updateTenantSettingsController } from "./presentation/controllers/v1/update-tenant-settings.controller";
+import { createTenantSubscriptionController } from "./presentation/controllers/v1/create-tenant-subscription.controller";
 import { getTenantSubscriptionController } from "./presentation/controllers/v1/get-tenant-subscription.controller";
 import { updateTenantSubscriptionController } from "./presentation/controllers/v1/update-tenant-subscription.controller";
 import { createCompanyController } from "./presentation/controllers/v1/create-company.controller";
@@ -48,8 +50,10 @@ export function createOrganizationRouter(deps: OrganizationDependencies): Router
   router.post("/tenants/:tenantUuid/activate", activateTenantController(deps));
   router.post("/tenants/:tenantUuid/suspend", suspendTenantController(deps));
   router.post("/tenants/:tenantUuid/deactivate", deactivateTenantController(deps));
+  router.post("/tenants/:tenantUuid/settings", createTenantSettingsController(deps));
   router.get("/tenants/:tenantUuid/settings", getTenantSettingsController(deps));
   router.put("/tenants/:tenantUuid/settings", updateTenantSettingsController(deps));
+  router.post("/tenants/:tenantUuid/subscription", createTenantSubscriptionController(deps));
   router.get("/tenants/:tenantUuid/subscription", getTenantSubscriptionController(deps));
   router.put("/tenants/:tenantUuid/subscription", updateTenantSubscriptionController(deps));
 

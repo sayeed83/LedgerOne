@@ -11,6 +11,8 @@ import {
   TenantNotFoundError,
   TenantSettingsNotFoundError,
   TenantSubscriptionNotFoundError,
+  TenantSettingsAlreadyExistsError,
+  TenantSubscriptionAlreadyExistsError,
   InvalidTenantStatusTransitionError,
   TenantNotActiveError,
   CompanyNotFoundError,
@@ -36,6 +38,12 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof TenantSubscriptionNotFoundError) {
     return { status: 404, code: "ORG_TENANT_SUBSCRIPTION_NOT_FOUND" };
+  }
+  if (error instanceof TenantSettingsAlreadyExistsError) {
+    return { status: 409, code: "ORG_TENANT_SETTINGS_ALREADY_EXISTS" };
+  }
+  if (error instanceof TenantSubscriptionAlreadyExistsError) {
+    return { status: 409, code: "ORG_TENANT_SUBSCRIPTION_ALREADY_EXISTS" };
   }
   if (error instanceof InvalidTenantStatusTransitionError) {
     return { status: 409, code: "ORG_INVALID_STATUS_TRANSITION" };

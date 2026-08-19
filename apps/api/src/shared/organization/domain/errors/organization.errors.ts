@@ -27,6 +27,20 @@ export class TenantSubscriptionNotFoundError extends DomainError {
   }
 }
 
+/** Raised on a second `createTenantSettings` call for a Tenant that already has a settings row (one-to-one with Tenant, `tenantId` unique). */
+export class TenantSettingsAlreadyExistsError extends DomainError {
+  constructor(tenantUuid: string) {
+    super(`Tenant settings for tenant '${tenantUuid}' already exist.`);
+  }
+}
+
+/** Raised on a second `createTenantSubscription` call for a Tenant that already has a subscription row (one-to-one with Tenant, `tenantId` unique). */
+export class TenantSubscriptionAlreadyExistsError extends DomainError {
+  constructor(tenantUuid: string) {
+    super(`Tenant subscription for tenant '${tenantUuid}' already exists.`);
+  }
+}
+
 /** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Company does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). */
 export class CompanyNotFoundError extends DomainError {
   constructor(identifier: string) {

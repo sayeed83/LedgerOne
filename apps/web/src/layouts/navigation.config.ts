@@ -103,6 +103,13 @@ export function getBreadcrumbTrail(pathname: string): BreadcrumbItem[] {
     trail.push({ label: "Details", href: pathname });
   }
 
+  // Role's own first nested/detail-level route (`/authorization/roles/:roleUuid`),
+  // mirroring the User Management branch above.
+  if (pathname.startsWith("/authorization/roles/")) {
+    trail.push({ label: "Roles", href: "/authorization/roles" });
+    trail.push({ label: "Details", href: pathname });
+  }
+
   // Accounting's own nested/detail-level routes — Financial Year's own
   // Fiscal Periods, Tax Group's own Tax Rules (surfaced inline, no separate
   // route), and Chart of Accounts' own Account Groups sub-section.

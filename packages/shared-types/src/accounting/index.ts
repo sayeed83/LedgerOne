@@ -8,3 +8,4 @@ export * from "./account-group.dto";
 export * from "./account.dto";
 export * from "./journal-entry.dto";
 export * from "./ledger.dto";
+export * from "./report.dto";

@@ -28,3 +28,19 @@ export interface UserRoleResponseDto {
 export interface AssignRoleRequestDto {
   roleUuid: string;
 }
+
+// Mirrors presentation/dto/requests/create-role.dto.ts. `isSystemRole` is
+// deliberately not accepted here — every Role created through this endpoint
+// defaults to false at the Business layer (00_BUSINESS_RULES.md ROL-002:
+// only LedgerOne's own platform seeding creates a standard/system Role).
+export interface CreateRoleRequestDto {
+  name: string;
+  description?: string | null;
+}
+
+// Mirrors presentation/dto/requests/update-role.dto.ts. `status` is never
+// changed here — only via the dedicated `retire` transition.
+export interface UpdateRoleRequestDto {
+  name?: string;
+  description?: string | null;
+}

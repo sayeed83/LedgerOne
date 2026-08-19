@@ -12,6 +12,8 @@ const ORGANIZATION_ERROR_MESSAGES: Record<string, string> = {
   ORG_TENANT_NOT_FOUND: "This Tenant could not be found. It may have been removed.",
   ORG_TENANT_SETTINGS_NOT_FOUND: "This Tenant's settings could not be found.",
   ORG_TENANT_SUBSCRIPTION_NOT_FOUND: "This Tenant's subscription could not be found.",
+  ORG_TENANT_SETTINGS_ALREADY_EXISTS: "This Tenant's settings have already been set up.",
+  ORG_TENANT_SUBSCRIPTION_ALREADY_EXISTS: "This Tenant's subscription has already been set up.",
   ORG_INVALID_STATUS_TRANSITION: "That status change isn't allowed from the Tenant's current status.",
   ORG_TENANT_NOT_ACTIVE: "This action requires the Tenant to be Active.",
   ORG_COMPANY_NOT_FOUND: "This Company could not be found. It may have been removed.",

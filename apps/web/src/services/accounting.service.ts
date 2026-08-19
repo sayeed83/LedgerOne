@@ -2,6 +2,12 @@ import type {
   AccountLedgerResponseDto,
   AccountResponseDto,
   AccountGroupResponseDto,
+  BalanceSheetQueryDto,
+  BalanceSheetResponseDto,
+  CashFlowQueryDto,
+  CashFlowResponseDto,
+  ClosingReadinessQueryDto,
+  ClosingReadinessResponseDto,
   CreateAccountGroupRequestDto,
   CreateAccountRequestDto,
   CreateCurrencyRequestDto,
@@ -22,8 +28,12 @@ import type {
   ListExchangeRatesQueryDto,
   ListJournalEntriesQueryDto,
   ListLedgerQueryDto,
+  ProfitAndLossQueryDto,
+  ProfitAndLossResponseDto,
   TaxGroupResponseDto,
   TaxRuleResponseDto,
+  TrialBalanceQueryDto,
+  TrialBalanceResponseDto,
   UpdateAccountGroupRequestDto,
   UpdateAccountRequestDto,
   UpdateCurrencyRequestDto,
@@ -426,6 +436,54 @@ export async function getAccountLedger(
 export async function getLedgerEntry(ledgerEntryUuid: string): Promise<LedgerEntryDetailResponseDto> {
   const response = await apiClient.get<Envelope<LedgerEntryDetailResponseDto>>(
     `/accounting/ledger/entries/${ledgerEntryUuid}`,
+  );
+  return response.data.data;
+}
+
+// --- Financial Reports (read-only — Trial Balance Ch.24, P&L Ch.25,
+// Balance Sheet Ch.26, Cash Flow Ch.27, Financial Closing readiness check
+// Ch.32; no create/update/delete endpoint exists for any of these, they are
+// derived views over the existing Ledger/Chart of Accounts data) ---
+
+export interface TrialBalanceResult {
+  data: TrialBalanceResponseDto;
+  pagination: CursorPaginationMetaDto;
+}
+
+export async function getTrialBalance(query: TrialBalanceQueryDto): Promise<TrialBalanceResult> {
+  const response = await apiClient.get<PaginatedEnvelope<TrialBalanceResponseDto>>(
+    "/accounting/reports/trial-balance",
+    { params: query },
+  );
+  return { data: response.data.data, pagination: response.data.meta.pagination };
+}
+
+export async function getBalanceSheet(query: BalanceSheetQueryDto): Promise<BalanceSheetResponseDto> {
+  const response = await apiClient.get<Envelope<BalanceSheetResponseDto>>("/accounting/reports/balance-sheet", {
+    params: query,
+  });
+  return response.data.data;
+}
+
+export async function getProfitAndLoss(query: ProfitAndLossQueryDto): Promise<ProfitAndLossResponseDto> {
+  const response = await apiClient.get<Envelope<ProfitAndLossResponseDto>>(
+    "/accounting/reports/profit-and-loss",
+    { params: query },
+  );
+  return response.data.data;
+}
+
+export async function getCashFlow(query: CashFlowQueryDto): Promise<CashFlowResponseDto> {
+  const response = await apiClient.get<Envelope<CashFlowResponseDto>>("/accounting/reports/cash-flow", {
+    params: query,
+  });
+  return response.data.data;
+}
+
+export async function getClosingReadiness(query: ClosingReadinessQueryDto): Promise<ClosingReadinessResponseDto> {
+  const response = await apiClient.get<Envelope<ClosingReadinessResponseDto>>(
+    "/accounting/reports/closing-readiness",
+    { params: query },
   );
   return response.data.data;
 }
