@@ -14,6 +14,7 @@ import { WarehouseStatus } from "../../domain/enums/warehouse-status.enum";
 import { AdjustmentType } from "../../domain/enums/adjustment-type.enum";
 import { StockMovementType } from "../../domain/enums/stock-movement-type.enum";
 import { IInventoryRepository } from "../../domain/interfaces/inventory-repository.interface";
+import { ITransactionRunner } from "../../domain/interfaces/transaction-runner.interface";
 
 export function buildProductCategory(overrides: Partial<ProductCategory> = {}): ProductCategory {
   const base = new ProductCategory(
@@ -184,6 +185,7 @@ export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepositor
     findStockByWarehouseAndProduct: jest.fn(),
     listStocksByWarehouse: jest.fn(),
     listStocksByCompany: jest.fn(),
+    applyStockQuantityDelta: jest.fn(),
     createInventoryAdjustment: jest.fn(),
     updateInventoryAdjustment: jest.fn(),
     findInventoryAdjustmentByUuid: jest.fn(),
@@ -196,4 +198,11 @@ export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepositor
     listStockMovementsByProduct: jest.fn(),
     listStockMovementsByCompany: jest.fn(),
   };
+}
+
+/** Runs `fn` immediately against a sentinel `tx` value — no real Prisma transaction in unit tests (05_CODING_STANDARDS.md Ch.10.6), mirroring Accounting's own `createFakeTransactionRunner` exactly. */
+export function createFakeTransactionRunner(): jest.Mocked<ITransactionRunner> {
+  return {
+    run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn("fake-tx")),
+  } as unknown as jest.Mocked<ITransactionRunner>;
 }

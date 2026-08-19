@@ -35,7 +35,11 @@ import express from "express";
 import request from "supertest";
 import { createInventoryRouter } from "../../../src/shared/inventory";
 import { InventoryDependencies } from "../../../src/shared/inventory/business/inventory.composition";
-import { buildProductCategory, createFakeInventoryRepository } from "../../../src/shared/inventory/business/test-support/fixtures";
+import {
+  buildProductCategory,
+  createFakeInventoryRepository,
+  createFakeTransactionRunner,
+} from "../../../src/shared/inventory/business/test-support/fixtures";
 
 function buildApp(deps: InventoryDependencies) {
   const app = express();
@@ -45,7 +49,7 @@ function buildApp(deps: InventoryDependencies) {
 }
 
 function buildDeps(): InventoryDependencies {
-  return { repository: createFakeInventoryRepository() };
+  return { repository: createFakeInventoryRepository(), transactionRunner: createFakeTransactionRunner() };
 }
 
 const TENANT_HEADER = "1";

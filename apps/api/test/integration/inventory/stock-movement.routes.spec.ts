@@ -28,7 +28,12 @@ import express from "express";
 import request from "supertest";
 import { createInventoryRouter } from "../../../src/shared/inventory";
 import { InventoryDependencies } from "../../../src/shared/inventory/business/inventory.composition";
-import { buildStockMovement, createFakeInventoryRepository } from "../../../src/shared/inventory/business/test-support/fixtures";
+import {
+  buildStock,
+  buildStockMovement,
+  createFakeInventoryRepository,
+  createFakeTransactionRunner,
+} from "../../../src/shared/inventory/business/test-support/fixtures";
 
 function buildApp(deps: InventoryDependencies) {
   const app = express();
@@ -38,7 +43,7 @@ function buildApp(deps: InventoryDependencies) {
 }
 
 function buildDeps(): InventoryDependencies {
-  return { repository: createFakeInventoryRepository() };
+  return { repository: createFakeInventoryRepository(), transactionRunner: createFakeTransactionRunner() };
 }
 
 const TENANT_HEADER = "1";
@@ -165,6 +170,7 @@ describe("Stock Movement routes", () => {
         referenceUuid: REFERENCE_UUID,
       });
       (deps.repository.createStockMovement as jest.Mock).mockResolvedValue(created);
+      (deps.repository.applyStockQuantityDelta as jest.Mock).mockResolvedValue(buildStock());
 
       const res = await request(buildApp(deps))
         .post("/api/v1/inventory/stock-movements")
@@ -213,17 +219,33 @@ describe("Stock Movement routes", () => {
       expect(res.body.data.deletedAt).toBeUndefined();
       expect(res.body.data.updatedAt).toBeUndefined();
 
-      expect(deps.repository.createStockMovement).toHaveBeenCalledWith(1n, {
-        companyUuid: COMPANY_UUID,
-        productId: 1n,
-        sourceWarehouseUuid: null,
-        destinationWarehouseUuid: WAREHOUSE_UUID,
-        movementType: "RECEIPT",
-        quantity: "10.000000",
-        referenceType: "GOODS_RECEIPT",
-        referenceUuid: REFERENCE_UUID,
-        createdBy: null,
-      });
+      expect(deps.repository.createStockMovement).toHaveBeenCalledWith(
+        1n,
+        {
+          companyUuid: COMPANY_UUID,
+          productId: 1n,
+          sourceWarehouseUuid: null,
+          destinationWarehouseUuid: WAREHOUSE_UUID,
+          movementType: "RECEIPT",
+          quantity: "10.000000",
+          referenceType: "GOODS_RECEIPT",
+          referenceUuid: REFERENCE_UUID,
+          createdBy: null,
+        },
+        "fake-tx",
+      );
+
+      // STM-001/Ch.38.5 — the destination Warehouse's Stock is increased by
+      // the movement quantity, inside the same transaction.
+      expect(deps.repository.applyStockQuantityDelta).toHaveBeenCalledTimes(1);
+      expect(deps.repository.applyStockQuantityDelta).toHaveBeenCalledWith(
+        1n,
+        COMPANY_UUID,
+        WAREHOUSE_UUID,
+        1n,
+        "10.000000",
+        "fake-tx",
+      );
     });
   });
 

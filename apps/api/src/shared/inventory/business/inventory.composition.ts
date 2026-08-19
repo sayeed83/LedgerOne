@@ -4,10 +4,12 @@
 // used by unit tests, which build their own fake `deps` (Ch.10.6) — this
 // file is for the future Presentation layer to import.
 import { PrismaInventoryRepository } from "../repository/inventory.repository";
+import { PrismaTransactionRunner } from "../repository/prisma-transaction-runner";
 
 export function createInventoryDependencies() {
   return {
     repository: new PrismaInventoryRepository(),
+    transactionRunner: new PrismaTransactionRunner(),
   };
 }
 

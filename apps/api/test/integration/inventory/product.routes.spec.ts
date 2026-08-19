@@ -34,6 +34,7 @@ import {
   buildProductCategory,
   buildUnit,
   createFakeInventoryRepository,
+  createFakeTransactionRunner,
 } from "../../../src/shared/inventory/business/test-support/fixtures";
 
 function buildApp(deps: InventoryDependencies) {
@@ -44,7 +45,7 @@ function buildApp(deps: InventoryDependencies) {
 }
 
 function buildDeps(): InventoryDependencies {
-  return { repository: createFakeInventoryRepository() };
+  return { repository: createFakeInventoryRepository(), transactionRunner: createFakeTransactionRunner() };
 }
 
 const TENANT_HEADER = "1";

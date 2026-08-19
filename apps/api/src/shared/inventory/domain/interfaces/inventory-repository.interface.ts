@@ -92,9 +92,19 @@
 // FK) implementing Ch.39.10's ERD's two independent Warehouse relationships.
 // `listStockMovementsByWarehouse` matches either side (STM-003's Transfer
 // populates both on one row). No movement-type/warehouse-side cross-column
-// validation, Stock-application arithmetic, or Journal Entry generation is
-// implemented here — persistence only, all Business-layer concerns for a
-// later milestone.
+// validation or Journal Entry generation is implemented here — persistence
+// only, all Business-layer concerns for a later milestone.
+//
+// `applyStockQuantityDelta` (Ch.39.7 STM-001/Ch.38.5 — "Stock quantity is
+// continuously updated by Stock Movements") is the one exception to "every
+// Stock Movement method is persistence-only, no Stock-application
+// arithmetic": it is itself a mechanical persistence primitive (find-the-row
+// -or-create-it-at-zero, then apply a signed delta via the database's own
+// atomic `increment`), not a business decision — no negative-stock
+// prevention (STK-001), no reservation arithmetic (STK-002), both explicitly
+// deferred to a later milestone. Its caller (`createStockMovement`) decides
+// *which* Warehouse(s) get *which* signed delta; this method only knows how
+// to apply one.
 import { ProductCategory, CreateProductCategoryProps, UpdateProductCategoryProps } from "../entities/product-category.entity";
 import { Unit, CreateUnitProps, UpdateUnitProps } from "../entities/unit.entity";
 import { Product, CreateProductProps, UpdateProductProps } from "../entities/product.entity";
@@ -180,6 +190,24 @@ export interface IInventoryRepository {
   listStocksByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<Stock[]>;
   /** Every Stock row belonging to a single Company, across every Warehouse. */
   listStocksByCompany(tenantId: bigint, companyUuid: string): Promise<Stock[]>;
+  /**
+   * Applies a signed decimal-string `quantityDelta` to a (Warehouse,
+   * Product) pair's `quantityOnHand`/`quantityAvailable` (Ch.38.7 STK-002's
+   * `available = onHand - reserved` stays consistent without touching
+   * `quantityReserved`, which this milestone never changes). Creates the
+   * Stock row at zero first if none exists yet (STM-001 — a movement must
+   * never be blocked just because no Stock row has been created for that
+   * pair before). Persistence only: no negative-stock check (STK-001), no
+   * reservation logic (STK-002) — a future Business-layer concern.
+   */
+  applyStockQuantityDelta(
+    tenantId: bigint,
+    companyUuid: string,
+    warehouseUuid: string,
+    productId: bigint,
+    quantityDelta: string,
+    tx?: RepositoryTransaction,
+  ): Promise<Stock>;
 
   createInventoryAdjustment(
     tenantId: bigint,

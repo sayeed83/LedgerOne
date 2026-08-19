@@ -22,20 +22,34 @@
 // Stock (Ch.38) — Database layer ONLY, the current on-hand-inventory
 // snapshot per Product per Warehouse. A later revision added Inventory
 // Adjustment (Ch.44) — Database layer ONLY, the manual correction record.
-// This revision adds Stock Movement (Ch.39) — Database layer ONLY, the
+// A later revision added Stock Movement (Ch.39) — Database layer ONLY, the
 // immutable append-only ledger of every quantity change to Stock, modeled
 // with a dual source/destination Warehouse relationship per Ch.39.10's own
 // ERD (required to make STM-003's single-atomic-Transfer rule achievable at
 // all) and a four-value RECEIPT/ISSUE/TRANSFER/ADJUSTMENT movement-type enum
-// per Ch.39.1's own named business event kinds — see the model's own
+// per Ch.39.1's own named business event kinds — see that model's own
 // file-level comment for the full reasoning, including why an earlier
-// single-warehouse/IN-OUT draft of this same milestone was rolled back and
-// replaced rather than kept. Every later chapter in this module (Batch/
-// Ch.40, Serial Number/Ch.41, Reorder Level/Ch.42, Stock Valuation/Ch.43)
-// remains unstarted; no table is modeled for any of them yet.
-// Repository/Business/Presentation/Integration/Frontend layers for Product,
-// Warehouse, Stock, Inventory Adjustment, and Stock Movement are also not
-// started — stop condition for this milestone.
+// single-warehouse/IN-OUT draft of that same milestone was rolled back and
+// replaced rather than kept. This revision adds Batch (Ch.40) — Database
+// layer ONLY. Unlike every prior Inventory milestone, Chapter 40 could not
+// be modeled as an isolated new table alone: BAT-001 ("A Batch-tracked
+// Product's every Stock Movement... must reference a specific Batch") and
+// Ch.40.10's own ERD (`BATCH ||--o{ STOCK_MOVEMENT`) require `StockMovement`
+// (already shipped) to carry a real, nullable `batchId` FK back to this new
+// table, and Ch.40.9/40.6 ("Product... must be configured as Batch-tracked")
+// require `Product` (already shipped) to carry a new `isBatchTracked`
+// boolean. Both extensions were explicitly authorized by the user
+// (flagged and resolved, not guessed) after the conflict was raised;
+// both new columns are nullable/defaulted for backward compatibility, and
+// every cross-column invariant they introduce (batchId required only when
+// isBatchTracked, expiryDate-after-manufactureDate per Ch.40.8) is deferred
+// to a future Business-layer milestone, never a DB CHECK constraint, per
+// this milestone's own explicit instruction. Serial Number (Ch.41), Reorder
+// Level (Ch.42), and Stock Valuation (Ch.43) remain unstarted; no table is
+// modeled for any of them yet. Repository/Business/Presentation/Integration/
+// Frontend layers for Product, Warehouse, Stock, Inventory Adjustment,
+// Stock Movement, and Batch are also not started — stop condition for this
+// milestone.
 //
 // `productCategoryId` and `unitId` are real, in-module RESTRICT foreign keys
 // (FK-001) — NOT the uuid-reference pattern (FK-002), because Product
@@ -254,8 +268,14 @@ model Product {
   /// Back-relation for Stock Movement's real, in-module RESTRICT FK (Ch.39) — this milestone's Database layer only, no repository/service reads this relation yet.
   stockMovements StockMovement[]
 
+  /// Back-relation for Batch's real, in-module RESTRICT FK (Ch.40.9/40.10 "PRODUCT ||--o{ BATCH") — this milestone's Database layer only, no repository/service reads this relation yet.
+  batches Batch[]
+
   /// Stocked (tracked in Inventory) vs. Non-Stocked (e.g. a service) classification, set at creation (Ch.34.7 PRD-002). Immutability once transacted (Ch.34.12) is a Business-layer concern.
   isStocked Boolean @map("is_stocked")
+
+  /// Batch-tracking configuration (00_BUSINESS_RULES.md Ch.40.6/40.9: "Product configured as Batch-tracked (Ch.34 attribute)" / "must be configured as Batch-tracked") — added by the Batch (Ch.40) milestone, extending this already-shipped Product table because Ch.40 explicitly requires it, not a Ch.34-originated field. Defaults `false` for backward compatibility with every existing Product row. BAT-001's "every Stock Movement... must reference a specific Batch" enforcement (checking this flag before requiring `StockMovement.batchId`) is a Business-layer concern, not a DB CHECK constraint.
+  isBatchTracked Boolean @default(false) @map("is_batch_tracked")
 
   /// Product lifecycle state (00_BUSINESS_RULES.md Ch.34.5): Draft, Active, Discontinued.
   status ProductStatus @default(DRAFT) @map("status")
@@ -640,6 +660,10 @@ model StockMovement {
   /// Polymorphic pointer to the originating business transaction's `uuid`, paired with `referenceType` — no DB-level FK. Nullable per Ch.39.19 (a manual Adjustment may legitimately have none).
   referenceUuid String? @db.Char(36) @map("reference_uuid")
 
+  /// Real, in-module RESTRICT FK to this module's own Batch (00_BUSINESS_RULES.md Ch.40.10 ERD: "BATCH ||--o{ STOCK_MOVEMENT : referenced by"; BAT-001: "A Batch-tracked Product's every Stock Movement... must reference a specific Batch") — added by the Batch (Ch.40) milestone, extending this already-shipped, immutable table because Ch.40 explicitly requires it. Nullable for backward compatibility with every existing row and because BAT-001 only applies to a Batch-tracked Product's movements — a non-Batch-tracked Product's movement legitimately has none. Enforcing "required when the Product is Batch-tracked" is a Business-layer concern (checked against `Product.isBatchTracked`), not a DB NOT NULL/CHECK constraint.
+  batchId BigInt? @db.UnsignedBigInt @map("batch_id")
+  batch   Batch?  @relation(fields: [batchId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
   createdAt DateTime @default(now()) @db.DateTime(3) @map("created_at")
   /// Nullable — mirrors `LedgerEntry.createdBy`'s own reasoning: attributable to a system-triggered posting process, not always a direct human action.
   createdBy BigInt?  @db.UnsignedBigInt @map("created_by")
@@ -650,6 +674,7 @@ model StockMovement {
   @@index([productId], map: "idx_stock_movements_product")
   @@index([movementType], map: "idx_stock_movements_movement_type")
   @@index([referenceType, referenceUuid], map: "idx_stock_movements_reference_type_uuid")
+  @@index([batchId], map: "idx_stock_movements_batch")
   @@map("stock_movements")
 }
 
@@ -661,4 +686,134 @@ enum StockMovementType {
   ADJUSTMENT
 
   @@map("stock_movement_type")
+}
+
+// Batch (00_BUSINESS_RULES.md Ch.40: "a specific production or procurement
+// grouping of a Product... typically sharing a common manufacture date,
+// expiry date, or supplier lot number, tracked separately within overall
+// Stock (Ch.38) for traceability and expiry-management purposes," Ch.40.1).
+// Tenant-owned (`tenant_id`, MT-001), `companyUuid` a cross-module reference
+// (FK-002, no DB-level FK) — the same MT-001 scoping every other table in
+// this module already carries, not a Ch.40-specific invention (mirroring
+// Stock Movement's own identical file-level reasoning). This milestone
+// models ONLY the batch record itself, per Ch.40.4's own Scope ("batch-level
+// sub-tracking of Stock... Out of scope: aggregate Stock quantity itself") —
+// FEFO issue-selection logic (BAT-002), expiry-block enforcement (BAT-003),
+// and the actual application of a Batch-tracked Stock Movement's quantity
+// against this row's own `quantity` are all out of scope, deferred to later
+// Repository/Business milestones, mirroring how Stock's own STK-001
+// arithmetic was deferred at its own Database milestone.
+//
+// `productId` is a real, in-module RESTRICT FK (FK-001) to this module's own
+// `products.id`, mirroring Stock's/Stock Movement's own `productId`
+// treatment — Ch.40.10's ERD models this as `PRODUCT ||--o{ BATCH : "tracked
+// in, if Batch-enabled"` (required, many-to-one).
+//
+// `warehouseUuid` is a cross-module reference (FK-002, no DB-level FK) to
+// this module's own `warehouses.uuid`, mirroring Stock's/Inventory
+// Adjustment's/Stock Movement's identical `warehouseUuid` treatment — Ch.40.3's
+// own "Owns:" list explicitly names "the quantity of that specific batch
+// held per Warehouse" as a fact this table owns, even though Ch.40.10's ERD
+// diagram itself omits a literal BATCH-WAREHOUSE relationship line (the ERD
+// only diagrams PRODUCT/BATCH and BATCH/STOCK_MOVEMENT) — modeled here
+// because the "Owns:" prose is itself handbook text, not an invention beyond
+// it.
+//
+// `batchNumber` (Ch.40.1/40.3: "batch number... supplier lot number") is a
+// plain `VARCHAR(100)` — no handbook-specified length, a flagged
+// undocumented-but-reasonable choice (wider than `productCode`'s/
+// `warehouseCode`'s own `VARCHAR(32)`, since a supplier-assigned lot number
+// is external, non-standardized text). No uniqueness constraint is placed on
+// it — Ch.40 never states a Batch number must be unique (per Product, per
+// Company, or otherwise), so none is invented; two different Batches with
+// the same supplier lot number are permitted at the schema level.
+//
+// `manufactureDate`/`expiryDate` are both nullable `DateTime` columns —
+// Ch.40.3 itself only marks expiry as conditional ("expiry date (if
+// applicable)"), but neither field is described as ever mandatory ("NOT
+// NULL") in literal handbook text, so neither is modeled as required.
+// Ch.40.8's Validation Rule ("Expiry date, if provided, must be after the
+// manufacture date") is a cross-column invariant, not a DB CHECK constraint
+// per this milestone's own explicit instruction — deferred to the
+// Business layer, mirroring every other cross-column invariant already
+// deferred in this schema (STK-001, Unit.conversionFactor-required-only-
+// when-baseUnitId-set).
+//
+// `quantity` is `DECIMAL(18,6)`, mirroring Stock's/Inventory Adjustment's/
+// Stock Movement's own quantity columns exactly (fractional-quantity-safe) —
+// no handbook-documented precision/scale exists for a batch quantity
+// either, carrying forward the same already-flagged deviation those models
+// established, not a newly invented one. Defaults to `0`, mirroring Stock's
+// own quantity-columns-always-a-concrete-value reasoning.
+//
+// `status` (BatchStatus: ACTIVE/DEPLETED/EXPIRED/DISPOSED) models Ch.40.5's
+// Business Lifecycle state diagram exactly (Active → Depleted via Issues
+// reaching zero quantity; Active → Expired once the expiry date passes with
+// quantity remaining; Expired → Disposed via a Ch.44 Inventory Adjustment
+// write-off) — mirroring `ProductStatus`'s/`WarehouseStatus`'s own enum
+// convention (05_CODING_STANDARDS.md Ch.26.4). Every transition
+// (quantity-reaches-zero, expiry-date-passed, disposal) is a Business-layer
+// computation/trigger, not modeled here.
+//
+// Back-relation `stockMovements StockMovement[]` supports BAT-001/Ch.40.10's
+// own `BATCH ||--o{ STOCK_MOVEMENT` — `StockMovement.batchId` (added by this
+// same milestone) is the real, in-module RESTRICT FK side of that
+// relationship.
+model Batch {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK, mirroring Stock's/Stock Movement's own `companyUuid` treatment.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Real, in-module RESTRICT FK to this module's own Product (Ch.34) — required, per Ch.40.10's ERD (`PRODUCT ||--o{ BATCH : "tracked in, if Batch-enabled"`).
+  productId BigInt  @db.UnsignedBigInt @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Cross-module reference to this module's own `warehouses.uuid` (FK-002) — no DB-level FK, mirroring Stock's/Inventory Adjustment's/Stock Movement's identical `warehouseUuid` treatment. Required — Ch.40.3's own "Owns:" list names "the quantity of that specific batch held per Warehouse" as an always-present fact.
+  warehouseUuid String @db.Char(36) @map("warehouse_uuid")
+
+  /// Batch/lot identifier (00_BUSINESS_RULES.md Ch.40.1/40.3) — no uniqueness constraint (Ch.40 never states one is required).
+  batchNumber String @db.VarChar(100) @map("batch_number")
+
+  /// Manufacture date (Ch.40.3) — nullable; not described as mandatory in literal handbook text.
+  manufactureDate DateTime? @db.DateTime(3) @map("manufacture_date")
+
+  /// Expiry date (Ch.40.3: "if applicable") — nullable. Ch.40.8's "must be after the manufacture date" validation is a Business-layer concern, not a DB CHECK constraint.
+  expiryDate DateTime? @db.DateTime(3) @map("expiry_date")
+
+  /// Quantity of this specific Batch held at `warehouseUuid` (Ch.40.3) — DECIMAL(18,6), mirroring Stock's/Inventory Adjustment's/Stock Movement's own quantity columns exactly (fractional-quantity-safe).
+  quantity Decimal @default(0) @db.Decimal(18, 6) @map("quantity")
+
+  /// Batch lifecycle state (00_BUSINESS_RULES.md Ch.40.5): Active, Depleted, Expired, Disposed.
+  status BatchStatus @default(ACTIVE) @map("status")
+
+  /// Back-relation for Stock Movement's real, in-module RESTRICT FK (Ch.40.10/BAT-001) — this milestone's Database layer only, no repository/service reads this relation yet.
+  stockMovements StockMovement[]
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@index([tenantId, companyUuid], map: "idx_batches_tenant_company")
+  @@index([companyUuid, productId], map: "idx_batches_company_product")
+  @@index([warehouseUuid, productId], map: "idx_batches_warehouse_product")
+  @@index([productId], map: "idx_batches_product")
+  @@index([batchNumber], map: "idx_batches_batch_number")
+  @@index([status], map: "idx_batches_status")
+  @@index([expiryDate], map: "idx_batches_expiry_date")
+  @@map("batches")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.40.5's Business Lifecycle state diagram exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum BatchStatus {
+  ACTIVE
+  DEPLETED
+  EXPIRED
+  DISPOSED
+
+  @@map("batch_status")
 }

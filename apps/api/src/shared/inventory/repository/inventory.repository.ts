@@ -588,6 +588,54 @@ export class PrismaInventoryRepository implements IInventoryRepository {
     return rows.map(toStockDomain);
   }
 
+  // `applyStockQuantityDelta` (Ch.39.7 STM-001) — find-the-row-or-create-it-
+  // at-zero, then apply a signed delta via Prisma's own atomic `increment`
+  // (pushed down to a single `UPDATE ... SET quantity_on_hand =
+  // quantity_on_hand + ?` at the database, race-free without any in-process
+  // decimal arithmetic). Both the find and the write use `this.client(tx)`
+  // (not the bare `prisma` singleton every read-only method above uses) so
+  // they participate in the caller's transaction — required here, unlike
+  // every other read in this file, because this method's own create-if-
+  // missing branch must see writes made earlier in the same transaction.
+  async applyStockQuantityDelta(
+    tenantId: bigint,
+    companyUuid: string,
+    warehouseUuid: string,
+    productId: bigint,
+    quantityDelta: string,
+    tx?: RepositoryTransaction,
+  ): Promise<Stock> {
+    const client = this.client(tx);
+    const existing = await client.stock.findFirst({
+      where: { tenantId, warehouseUuid, productId, deletedAt: null },
+    });
+
+    if (!existing) {
+      const row = await client.stock.create({
+        data: {
+          uuid: newUuid(),
+          tenantId,
+          companyUuid,
+          warehouseUuid,
+          productId,
+          quantityOnHand: quantityDelta,
+          quantityReserved: "0",
+          quantityAvailable: quantityDelta,
+        },
+      });
+      return toStockDomain(row);
+    }
+
+    const row = await client.stock.update({
+      where: { id: existing.id },
+      data: {
+        quantityOnHand: { increment: quantityDelta },
+        quantityAvailable: { increment: quantityDelta },
+      },
+    });
+    return toStockDomain(row);
+  }
+
   // Inventory Adjustment is tenant-owned (06_DATABASE_STANDARDS.md MT-001) —
   // every query below asserts `tenantId` explicitly and independently, never
   // trusting a previously-resolved row (MT-002, Ch.6.4's worked example).
