@@ -92,3 +92,17 @@ export class InventoryAdjustmentNotFoundError extends DomainError {
     super(`Inventory Adjustment '${identifier}' was not found.`);
   }
 }
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Stock Movement does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Stock Movement has no update/remove method (Ch.39.5/STM-002 immutability), so this is thrown only by `findStockMovementByUuid`'s callers, mirroring `LedgerEntryNotFoundError`'s (accounting module) identical find-only usage. */
+export class StockMovementNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Stock Movement '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createStockMovement` when the Warehouse field(s) 00_BUSINESS_RULES.md Ch.39.8/STM-003 require for the given `movementType` were not supplied: a RECEIPT needs `destinationWarehouseUuid`, an ISSUE needs `sourceWarehouseUuid`, and a TRANSFER needs both (STM-003 — "must record both the decrease at the source Warehouse and the increase at the destination Warehouse as one atomic movement"). ADJUSTMENT has no Ch.39.8-stated Warehouse-side requirement and is never checked here. */
+export class StockMovementMissingRequiredWarehouseError extends DomainError {
+  constructor(public readonly movementType: string, public readonly missingWarehouseSide: string) {
+    super(`Stock Movement of type '${movementType}' requires ${missingWarehouseSide} to be specified.`);
+  }
+}

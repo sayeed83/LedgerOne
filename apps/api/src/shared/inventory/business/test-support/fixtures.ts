@@ -8,9 +8,11 @@ import { Product } from "../../domain/entities/product.entity";
 import { Warehouse } from "../../domain/entities/warehouse.entity";
 import { Stock } from "../../domain/entities/stock.entity";
 import { InventoryAdjustment } from "../../domain/entities/inventory-adjustment.entity";
+import { StockMovement } from "../../domain/entities/stock-movement.entity";
 import { ProductStatus } from "../../domain/enums/product-status.enum";
 import { WarehouseStatus } from "../../domain/enums/warehouse-status.enum";
 import { AdjustmentType } from "../../domain/enums/adjustment-type.enum";
+import { StockMovementType } from "../../domain/enums/stock-movement-type.enum";
 import { IInventoryRepository } from "../../domain/interfaces/inventory-repository.interface";
 
 export function buildProductCategory(overrides: Partial<ProductCategory> = {}): ProductCategory {
@@ -132,6 +134,25 @@ export function buildInventoryAdjustment(overrides: Partial<InventoryAdjustment>
   return Object.assign(Object.create(InventoryAdjustment.prototype), base, overrides) as InventoryAdjustment;
 }
 
+export function buildStockMovement(overrides: Partial<StockMovement> = {}): StockMovement {
+  const base = new StockMovement(
+    1n,
+    "00000000-0000-0000-0000-000000000007",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    1n,
+    "00000000-0000-0000-0000-000000000200",
+    null,
+    StockMovementType.Receipt,
+    "1.000000",
+    null,
+    null,
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+  );
+  return Object.assign(Object.create(StockMovement.prototype), base, overrides) as StockMovement;
+}
+
 export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepository> {
   return {
     createProductCategory: jest.fn(),
@@ -169,5 +190,10 @@ export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepositor
     listInventoryAdjustmentsByWarehouse: jest.fn(),
     listInventoryAdjustmentsByProduct: jest.fn(),
     listInventoryAdjustmentsByCompany: jest.fn(),
+    createStockMovement: jest.fn(),
+    findStockMovementByUuid: jest.fn(),
+    listStockMovementsByWarehouse: jest.fn(),
+    listStockMovementsByProduct: jest.fn(),
+    listStockMovementsByCompany: jest.fn(),
   };
 }

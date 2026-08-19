@@ -1,12 +1,14 @@
 import type {
   CreateInventoryAdjustmentRequestDto,
   CreateProductRequestDto,
+  CreateStockMovementRequestDto,
   CreateStockRequestDto,
   CreateUnitRequestDto,
   CreateWarehouseRequestDto,
   InventoryAdjustmentResponseDto,
   ProductCategoryResponseDto,
   ProductResponseDto,
+  StockMovementResponseDto,
   StockResponseDto,
   UnitResponseDto,
   UpdateInventoryAdjustmentRequestDto,
@@ -190,5 +192,28 @@ export async function updateInventoryAdjustment(
     `/inventory/adjustments/${adjustmentUuid}`,
     payload,
   );
+  return response.data.data;
+}
+
+// --- Stock Movement (Ch.39, immutable ledger — no update/remove method exists on the backend, STM-002) ---
+
+export async function listStockMovementsByWarehouse(warehouseUuid: string): Promise<StockMovementResponseDto[]> {
+  const response = await apiClient.get<Envelope<StockMovementResponseDto[]>>("/inventory/stock-movements", {
+    params: { warehouseUuid },
+  });
+  return response.data.data;
+}
+
+export async function getStockMovement(movementUuid: string): Promise<StockMovementResponseDto> {
+  const response = await apiClient.get<Envelope<StockMovementResponseDto>>(
+    `/inventory/stock-movements/${movementUuid}`,
+  );
+  return response.data.data;
+}
+
+export async function createStockMovement(
+  payload: CreateStockMovementRequestDto,
+): Promise<StockMovementResponseDto> {
+  const response = await apiClient.post<Envelope<StockMovementResponseDto>>("/inventory/stock-movements", payload);
   return response.data.data;
 }

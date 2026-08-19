@@ -45,6 +45,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   { label: "Warehouses", href: "/inventory/warehouses", icon: BuildingIcon },
   { label: "Stocks", href: "/inventory/stocks", icon: ListIcon },
   { label: "Adjustments", href: "/inventory/adjustments", icon: ListIcon },
+  { label: "Stock Movements", href: "/inventory/stock-movements", icon: ArrowsRightLeftIcon },
 ];
 
 export interface BreadcrumbItem {
@@ -157,6 +158,13 @@ export function getBreadcrumbTrail(pathname: string): BreadcrumbItem[] {
   // (`/inventory/adjustments/:adjustmentUuid`), mirroring Stock's own branch above.
   if (pathname.startsWith("/inventory/adjustments/")) {
     trail.push({ label: "Adjustments", href: "/inventory/adjustments" });
+    trail.push({ label: "Details", href: pathname });
+  }
+
+  // Stock Movement's own first nested/detail-level route
+  // (`/inventory/stock-movements/:movementUuid`), mirroring Inventory Adjustment's own branch above.
+  if (pathname.startsWith("/inventory/stock-movements/")) {
+    trail.push({ label: "Stock Movements", href: "/inventory/stock-movements" });
     trail.push({ label: "Details", href: pathname });
   }
 

@@ -10,3 +10,4 @@
 export { ProductStatus } from "../domain/enums/product-status.enum";
 export { WarehouseStatus } from "../domain/enums/warehouse-status.enum";
 export { AdjustmentType } from "../domain/enums/adjustment-type.enum";
+export { StockMovementType } from "../domain/enums/stock-movement-type.enum";

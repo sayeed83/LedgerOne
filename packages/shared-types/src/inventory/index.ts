@@ -4,3 +4,4 @@ export * from "./product-category.dto";
 export * from "./warehouse.dto";
 export * from "./stock.dto";
 export * from "./inventory-adjustment.dto";
+export * from "./stock-movement.dto";

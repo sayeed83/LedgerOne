@@ -18,13 +18,24 @@
 // explicit instruction, mirroring how Product Category's/Unit's own first
 // milestones started (single entity, single layer, then stop). A later
 // revision added Warehouse (Ch.37) — Database layer ONLY, same
-// single-entity, single-layer, then-stop pattern. This revision adds Stock
-// (Ch.38) — Database layer ONLY, the current on-hand-inventory snapshot per
-// Product per Warehouse; Stock Movement (Ch.39) and every later chapter in
-// this module remain unstarted; no table is modeled for any of them yet.
+// single-entity, single-layer, then-stop pattern. A later revision added
+// Stock (Ch.38) — Database layer ONLY, the current on-hand-inventory
+// snapshot per Product per Warehouse. A later revision added Inventory
+// Adjustment (Ch.44) — Database layer ONLY, the manual correction record.
+// This revision adds Stock Movement (Ch.39) — Database layer ONLY, the
+// immutable append-only ledger of every quantity change to Stock, modeled
+// with a dual source/destination Warehouse relationship per Ch.39.10's own
+// ERD (required to make STM-003's single-atomic-Transfer rule achievable at
+// all) and a four-value RECEIPT/ISSUE/TRANSFER/ADJUSTMENT movement-type enum
+// per Ch.39.1's own named business event kinds — see the model's own
+// file-level comment for the full reasoning, including why an earlier
+// single-warehouse/IN-OUT draft of this same milestone was rolled back and
+// replaced rather than kept. Every later chapter in this module (Batch/
+// Ch.40, Serial Number/Ch.41, Reorder Level/Ch.42, Stock Valuation/Ch.43)
+// remains unstarted; no table is modeled for any of them yet.
 // Repository/Business/Presentation/Integration/Frontend layers for Product,
-// Warehouse, and Stock are also not started — stop condition for this
-// milestone.
+// Warehouse, Stock, Inventory Adjustment, and Stock Movement are also not
+// started — stop condition for this milestone.
 //
 // `productCategoryId` and `unitId` are real, in-module RESTRICT foreign keys
 // (FK-001) — NOT the uuid-reference pattern (FK-002), because Product
@@ -239,6 +250,9 @@ model Product {
 
   /// Back-relation for Inventory Adjustment's real, in-module RESTRICT FK (Ch.44.3) — this milestone's Database layer only, no repository/service reads this relation yet.
   inventoryAdjustments InventoryAdjustment[]
+
+  /// Back-relation for Stock Movement's real, in-module RESTRICT FK (Ch.39) — this milestone's Database layer only, no repository/service reads this relation yet.
+  stockMovements StockMovement[]
 
   /// Stocked (tracked in Inventory) vs. Non-Stocked (e.g. a service) classification, set at creation (Ch.34.7 PRD-002). Immutability once transacted (Ch.34.12) is a Business-layer concern.
   isStocked Boolean @map("is_stocked")
@@ -519,4 +533,132 @@ enum AdjustmentType {
   DECREASE
 
   @@map("adjustment_type")
+}
+
+// Stock Movement (00_BUSINESS_RULES.md Ch.39: "the record of any event that
+// changes Stock (Ch.38) quantity — a Receipt (incoming), an Issue (outgoing),
+// a Transfer (between Warehouses), or an Adjustment (Ch.44) — forming the
+// complete, immutable history that Stock's current quantity is derived
+// from," Ch.39.1). Tenant-owned (`tenant_id`, MT-001), `companyUuid` a
+// cross-module reference (FK-002, no DB-level FK) — the same MT-001 scoping
+// every other table in this module already carries, not a Ch.39-specific
+// invention. This Database-only milestone models ONLY the movement record
+// itself, per Ch.39.4's own Scope ("the movement record itself... Out of
+// scope: the business transactions that trigger movements") — the process
+// that actually applies a movement against Stock's own on-hand quantity, and
+// the Goods Receipt/Delivery/Transfer/Adjustment workflows that each
+// generate movements, are all out of scope, deferred to later
+// Repository/Business milestones.
+//
+// `productId` is a real, in-module RESTRICT FK (FK-001) to this module's own
+// `products.id`, mirroring Stock's/Inventory Adjustment's own `productId`
+// treatment — Ch.39.10's ERD models this as `STOCK_MOVEMENT }o--|| PRODUCT :
+// "involves"` (required, many-to-one).
+//
+// `sourceWarehouseUuid`/`destinationWarehouseUuid` implement Ch.39.10's ERD
+// literally: `STOCK_MOVEMENT }o--o| WAREHOUSE : "source"` and `}o--o|
+// WAREHOUSE : "destination"` — TWO independent, optional Warehouse
+// relationships on the same row, not one. This is required by STM-003 ("A
+// Transfer movement between two Warehouses must record both the decrease at
+// the source Warehouse and the increase at the destination Warehouse as one
+// atomic movement — a Transfer can never leave stock counted at neither or
+// both locations simultaneously"): a single-warehouse-per-row shape cannot
+// express a Transfer without either losing one side or splitting it into two
+// rows, which STM-003 explicitly forbids (39.20's own "Common Mistakes"
+// table names exactly this failure mode: "Recording a Transfer as two
+// independent, unlinked movements"). Both are cross-module references
+// (FK-002, no DB-level FK) to this module's own `warehouses.uuid`, mirroring
+// Stock's/Inventory Adjustment's identical `warehouseUuid` treatment (no
+// other in-module entity in this schema targets Warehouse by its internal
+// `id`; Warehouse's real parent relationship lives via Organization's
+// Branch, per Warehouse's own file-level Handbook Deviation note above).
+// Which side(s) a given `movementType` populates (Receipt: destination only;
+// Issue: source only; Transfer: both; Adjustment: whichever side the
+// underlying Ch.44 adjustment direction implies) is a cross-column
+// invariant, not a MySQL/Prisma-expressible declarative constraint — a
+// Business-layer concern, deferred the same way every other cross-column
+// invariant in this schema has been (e.g. STK-001, TXR-001 overlap,
+// Unit.conversionFactor-required-only-when-baseUnitId-set).
+//
+// `movementType` (StockMovementType) is modeled with Ch.39.1's own four
+// named business event kinds — RECEIPT, ISSUE, TRANSFER, ADJUSTMENT — not a
+// two-value direction flag; a two-value IN/OUT flag cannot represent a
+// Transfer, which is neither a pure inbound nor pure outbound event but
+// both simultaneously (STM-003).
+//
+// `quantity` is `DECIMAL(18,6)`, mirroring Stock's/Inventory Adjustment's own
+// quantity columns exactly (fractional-quantity-safe) — no handbook-
+// documented precision/scale exists for a movement quantity either,
+// carrying forward the same already-flagged deviation those two models
+// established, not a newly invented one.
+//
+// `referenceType`/`referenceUuid` are a polymorphic, nullable pointer to the
+// originating business transaction (Ch.39.3's "reference to the originating
+// business transaction (Goods Receipt, Delivery, Transfer request)," 39.19's
+// "reference its originating business transaction... except for legitimate
+// manual Adjustments" — hence nullable) — no DB-level FK, since the
+// referenced entity varies by `referenceType` and may live in a different
+// module (Goods Receipt/Ch.57, Delivery/Ch.49 don't have tables yet either).
+//
+// No `updatedAt`/`updatedBy`/`deletedAt` at all, and no uniqueness
+// constraint — mirroring `LedgerEntry`'s own identical immutability posture
+// (accounting.prisma) exactly, not an independently invented choice: Ch.39.5
+// ("created and immediately final — like a Ledger entry (Ch.19.5), it is
+// immutable once recorded") and STM-002 ("immutable once recorded —
+// correction requires a new, offsetting Stock Movement, never a direct
+// edit") are the same rule as Ch.19's own LDG-002 wording that justified
+// `LedgerEntry` dropping every mutable/soft-delete column. `createdBy`
+// remains nullable, also mirroring `LedgerEntry`'s own reasoning (a
+// system-triggered posting process, not always a direct human action).
+model StockMovement {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK, mirroring Stock's/Inventory Adjustment's own `companyUuid` treatment.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Real, in-module RESTRICT FK to this module's own Product (Ch.34) — required, per Ch.39.10's ERD (`STOCK_MOVEMENT }o--|| PRODUCT : "involves"`).
+  productId BigInt  @db.UnsignedBigInt @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Cross-module reference to this module's own `warehouses.uuid` (FK-002) — no DB-level FK. Optional per Ch.39.10's ERD (`}o--o| WAREHOUSE : "source"`) — populated for Issue/Transfer, null for a pure Receipt.
+  sourceWarehouseUuid String? @db.Char(36) @map("source_warehouse_uuid")
+
+  /// Cross-module reference to this module's own `warehouses.uuid` (FK-002) — no DB-level FK. Optional per Ch.39.10's ERD (`}o--o| WAREHOUSE : "destination"`) — populated for Receipt/Transfer, null for a pure Issue.
+  destinationWarehouseUuid String? @db.Char(36) @map("destination_warehouse_uuid")
+
+  /// Business event kind (00_BUSINESS_RULES.md Ch.39.1): Receipt, Issue, Transfer, or Adjustment — not a direction flag, since Transfer is simultaneously inbound and outbound (STM-003).
+  movementType StockMovementType @map("movement_type")
+
+  /// Magnitude of the quantity change — DECIMAL(18,6), mirroring Stock's/Inventory Adjustment's own quantity columns exactly (fractional-quantity-safe).
+  quantity Decimal @db.Decimal(18, 6) @map("quantity")
+
+  /// Polymorphic pointer to the originating business transaction's type (Ch.39.3: Goods Receipt, Delivery, Transfer request) — no DB-level FK, since the referenced entity varies by type and may live in a different, not-yet-built module.
+  referenceType String? @db.VarChar(50) @map("reference_type")
+
+  /// Polymorphic pointer to the originating business transaction's `uuid`, paired with `referenceType` — no DB-level FK. Nullable per Ch.39.19 (a manual Adjustment may legitimately have none).
+  referenceUuid String? @db.Char(36) @map("reference_uuid")
+
+  createdAt DateTime @default(now()) @db.DateTime(3) @map("created_at")
+  /// Nullable — mirrors `LedgerEntry.createdBy`'s own reasoning: attributable to a system-triggered posting process, not always a direct human action.
+  createdBy BigInt?  @db.UnsignedBigInt @map("created_by")
+
+  @@index([tenantId, companyUuid], map: "idx_stock_movements_tenant_company")
+  @@index([sourceWarehouseUuid, productId], map: "idx_stock_movements_source_warehouse_product")
+  @@index([destinationWarehouseUuid, productId], map: "idx_stock_movements_destination_warehouse_product")
+  @@index([productId], map: "idx_stock_movements_product")
+  @@index([movementType], map: "idx_stock_movements_movement_type")
+  @@index([referenceType, referenceUuid], map: "idx_stock_movements_reference_type_uuid")
+  @@map("stock_movements")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.39.1's four named business event kinds exactly (05_CODING_STANDARDS.md Ch.26.4) — not a two-value direction flag, since Transfer is simultaneously inbound and outbound (STM-003).
+enum StockMovementType {
+  RECEIPT
+  ISSUE
+  TRANSFER
+  ADJUSTMENT
+
+  @@map("stock_movement_type")
 }

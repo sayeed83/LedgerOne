@@ -32,6 +32,9 @@ import { createInventoryAdjustmentController } from "./presentation/controllers/
 import { getInventoryAdjustmentController } from "./presentation/controllers/v1/get-inventory-adjustment.controller";
 import { updateInventoryAdjustmentController } from "./presentation/controllers/v1/update-inventory-adjustment.controller";
 import { listInventoryAdjustmentsByWarehouseController } from "./presentation/controllers/v1/list-inventory-adjustments-by-warehouse.controller";
+import { createStockMovementController } from "./presentation/controllers/v1/create-stock-movement.controller";
+import { getStockMovementController } from "./presentation/controllers/v1/get-stock-movement.controller";
+import { listStockMovementsByWarehouseController } from "./presentation/controllers/v1/list-stock-movements-by-warehouse.controller";
 
 export function createInventoryRouter(deps: InventoryDependencies): Router {
   const router = Router();
@@ -76,6 +79,11 @@ export function createInventoryRouter(deps: InventoryDependencies): Router {
   router.get("/adjustments", listInventoryAdjustmentsByWarehouseController(deps));
   router.get("/adjustments/:adjustmentUuid", getInventoryAdjustmentController(deps));
   router.put("/adjustments/:adjustmentUuid", updateInventoryAdjustmentController(deps));
+
+  // --- Stock Movement --- (Ch.39, immutable ledger — STM-002 — no PUT/DELETE route exists at all, structural, not a permission check)
+  router.post("/stock-movements", createStockMovementController(deps));
+  router.get("/stock-movements", listStockMovementsByWarehouseController(deps));
+  router.get("/stock-movements/:movementUuid", getStockMovementController(deps));
 
   return router;
 }

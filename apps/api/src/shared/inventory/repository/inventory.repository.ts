@@ -14,9 +14,11 @@ import {
   Warehouse as WarehouseModel,
   Stock as StockModel,
   InventoryAdjustment as InventoryAdjustmentModel,
+  StockMovement as StockMovementModel,
   ProductStatus as PrismaProductStatus,
   WarehouseStatus as PrismaWarehouseStatus,
   AdjustmentType as PrismaAdjustmentType,
+  StockMovementType as PrismaStockMovementType,
 } from "../../../database/generated/client";
 import {
   ProductCategory,
@@ -32,9 +34,11 @@ import {
   CreateInventoryAdjustmentProps,
   UpdateInventoryAdjustmentProps,
 } from "../domain/entities/inventory-adjustment.entity";
+import { StockMovement, CreateStockMovementProps } from "../domain/entities/stock-movement.entity";
 import { ProductStatus } from "../domain/enums/product-status.enum";
 import { WarehouseStatus } from "../domain/enums/warehouse-status.enum";
 import { AdjustmentType } from "../domain/enums/adjustment-type.enum";
+import { StockMovementType } from "../domain/enums/stock-movement-type.enum";
 import {
   ProductCategoryNotFoundError,
   UnitNotFoundError,
@@ -170,6 +174,27 @@ function toInventoryAdjustmentDomain(row: InventoryAdjustmentModel): InventoryAd
     row.createdBy,
     row.updatedBy,
     row.deletedAt,
+  );
+}
+
+/// `.toFixed()` (not `.toString()`) guarantees plain fixed-point decimal
+/// notation, never exponential notation, mirroring `toStockDomain`'s/
+/// `toInventoryAdjustmentDomain`'s own quantity mapping.
+function toStockMovementDomain(row: StockMovementModel): StockMovement {
+  return new StockMovement(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.companyUuid,
+    row.productId,
+    row.sourceWarehouseUuid,
+    row.destinationWarehouseUuid,
+    row.movementType as unknown as StockMovementType,
+    row.quantity.toFixed(),
+    row.referenceType,
+    row.referenceUuid,
+    row.createdAt,
+    row.createdBy,
   );
 }
 
@@ -648,5 +673,71 @@ export class PrismaInventoryRepository implements IInventoryRepository {
       orderBy: { id: "asc" },
     });
     return rows.map(toInventoryAdjustmentDomain);
+  }
+
+  // Stock Movement (Ch.39) — persistence only. No `updateStockMovement`:
+  // immutable once recorded (Ch.39.5/STM-002), mirroring `LedgerEntry`'s
+  // append-only repository shape exactly (no `deletedAt` filter on reads
+  // either, since no row is ever soft-deleted). `companyUuid` (FK-002) and
+  // `productId` (real, in-module FK) are accepted as plain values with no
+  // cross-repository existence validation, mirroring Stock's/Inventory
+  // Adjustment's own identical treatment. `sourceWarehouseUuid`/
+  // `destinationWarehouseUuid` (both FK-002) are likewise unvalidated here.
+
+  async createStockMovement(
+    tenantId: bigint,
+    props: CreateStockMovementProps,
+    tx?: RepositoryTransaction,
+  ): Promise<StockMovement> {
+    const row = await this.client(tx).stockMovement.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        companyUuid: props.companyUuid,
+        productId: props.productId,
+        sourceWarehouseUuid: props.sourceWarehouseUuid ?? null,
+        destinationWarehouseUuid: props.destinationWarehouseUuid ?? null,
+        movementType: props.movementType as unknown as PrismaStockMovementType,
+        quantity: props.quantity,
+        referenceType: props.referenceType ?? null,
+        referenceUuid: props.referenceUuid ?? null,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toStockMovementDomain(row);
+  }
+
+  async findStockMovementByUuid(tenantId: bigint, uuid: string): Promise<StockMovement | null> {
+    const row = await prisma.stockMovement.findFirst({
+      where: { tenantId, uuid },
+    });
+    return row ? toStockMovementDomain(row) : null;
+  }
+
+  async listStockMovementsByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<StockMovement[]> {
+    const rows = await prisma.stockMovement.findMany({
+      where: {
+        tenantId,
+        OR: [{ sourceWarehouseUuid: warehouseUuid }, { destinationWarehouseUuid: warehouseUuid }],
+      },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toStockMovementDomain);
+  }
+
+  async listStockMovementsByProduct(tenantId: bigint, productId: bigint): Promise<StockMovement[]> {
+    const rows = await prisma.stockMovement.findMany({
+      where: { tenantId, productId },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toStockMovementDomain);
+  }
+
+  async listStockMovementsByCompany(tenantId: bigint, companyUuid: string): Promise<StockMovement[]> {
+    const rows = await prisma.stockMovement.findMany({
+      where: { tenantId, companyUuid },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toStockMovementDomain);
   }
 }

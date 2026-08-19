@@ -80,6 +80,21 @@
 // application of the adjustment against Stock's own on-hand quantity is
 // implemented here — persistence only, all Business-layer concerns for a
 // later milestone.
+//
+// Stock Movement (Ch.39) is likewise tenant-owned (MT-001) with a
+// cross-module `companyUuid` reference and a real, in-module FK `productId`
+// to this module's own Product, but has NO update method at all — Ch.39.5/
+// STM-002 make it immutable once recorded ("correction requires a new,
+// offsetting Stock Movement, never a direct edit"), mirroring
+// `ILedgerRepository`'s (accounting module) identical append-only shape for
+// the same reason (LDG-002). `sourceWarehouseUuid`/`destinationWarehouseUuid`
+// are both nullable cross-module uuid-reference fields (FK-002, no DB-level
+// FK) implementing Ch.39.10's ERD's two independent Warehouse relationships.
+// `listStockMovementsByWarehouse` matches either side (STM-003's Transfer
+// populates both on one row). No movement-type/warehouse-side cross-column
+// validation, Stock-application arithmetic, or Journal Entry generation is
+// implemented here — persistence only, all Business-layer concerns for a
+// later milestone.
 import { ProductCategory, CreateProductCategoryProps, UpdateProductCategoryProps } from "../entities/product-category.entity";
 import { Unit, CreateUnitProps, UpdateUnitProps } from "../entities/unit.entity";
 import { Product, CreateProductProps, UpdateProductProps } from "../entities/product.entity";
@@ -90,6 +105,7 @@ import {
   CreateInventoryAdjustmentProps,
   UpdateInventoryAdjustmentProps,
 } from "../entities/inventory-adjustment.entity";
+import { StockMovement, CreateStockMovementProps } from "../entities/stock-movement.entity";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -183,4 +199,18 @@ export interface IInventoryRepository {
   listInventoryAdjustmentsByProduct(tenantId: bigint, productId: bigint): Promise<InventoryAdjustment[]>;
   /** Every Inventory Adjustment belonging to a single Company, across every Warehouse. */
   listInventoryAdjustmentsByCompany(tenantId: bigint, companyUuid: string): Promise<InventoryAdjustment[]>;
+
+  /** No `updateStockMovement` — Stock Movement is immutable (Ch.39.5/STM-002), mirroring `ILedgerRepository`'s identical append-only shape (no update method exists there either). */
+  createStockMovement(
+    tenantId: bigint,
+    props: CreateStockMovementProps,
+    tx?: RepositoryTransaction,
+  ): Promise<StockMovement>;
+  findStockMovementByUuid(tenantId: bigint, uuid: string): Promise<StockMovement | null>;
+  /** Every Stock Movement involving a single Warehouse, on either side (`sourceWarehouseUuid` or `destinationWarehouseUuid`). */
+  listStockMovementsByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<StockMovement[]>;
+  /** Every Stock Movement belonging to a single Product, across every Warehouse. */
+  listStockMovementsByProduct(tenantId: bigint, productId: bigint): Promise<StockMovement[]>;
+  /** Every Stock Movement belonging to a single Company, across every Warehouse. */
+  listStockMovementsByCompany(tenantId: bigint, companyUuid: string): Promise<StockMovement[]>;
 }

@@ -21,6 +21,8 @@ import {
   StockNotFoundError,
   StockAlreadyExistsError,
   InventoryAdjustmentNotFoundError,
+  StockMovementNotFoundError,
+  StockMovementMissingRequiredWarehouseError,
 } from "../../business/inventory-errors";
 
 export interface HttpErrorMapping {
@@ -64,6 +66,12 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof InventoryAdjustmentNotFoundError) {
     return { status: 404, code: "INV_INVENTORY_ADJUSTMENT_NOT_FOUND" };
+  }
+  if (error instanceof StockMovementNotFoundError) {
+    return { status: 404, code: "INV_STOCK_MOVEMENT_NOT_FOUND" };
+  }
+  if (error instanceof StockMovementMissingRequiredWarehouseError) {
+    return { status: 422, code: "INV_STOCK_MOVEMENT_INVALID_WAREHOUSE" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.
