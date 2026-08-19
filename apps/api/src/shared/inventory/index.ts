@@ -35,6 +35,15 @@ import { listInventoryAdjustmentsByWarehouseController } from "./presentation/co
 import { createStockMovementController } from "./presentation/controllers/v1/create-stock-movement.controller";
 import { getStockMovementController } from "./presentation/controllers/v1/get-stock-movement.controller";
 import { listStockMovementsByWarehouseController } from "./presentation/controllers/v1/list-stock-movements-by-warehouse.controller";
+import { createBatchController } from "./presentation/controllers/v1/create-batch.controller";
+import { getBatchController } from "./presentation/controllers/v1/get-batch.controller";
+import { updateBatchController } from "./presentation/controllers/v1/update-batch.controller";
+import { listBatchesByWarehouseController } from "./presentation/controllers/v1/list-batches-by-warehouse.controller";
+import { createReorderLevelController } from "./presentation/controllers/v1/create-reorder-level.controller";
+import { getReorderLevelController } from "./presentation/controllers/v1/get-reorder-level.controller";
+import { updateReorderLevelController } from "./presentation/controllers/v1/update-reorder-level.controller";
+import { listReorderLevelsByCompanyController } from "./presentation/controllers/v1/list-reorder-levels-by-company.controller";
+import { listReorderLevelsByWarehouseController } from "./presentation/controllers/v1/list-reorder-levels-by-warehouse.controller";
 
 export function createInventoryRouter(deps: InventoryDependencies): Router {
   const router = Router();
@@ -84,6 +93,35 @@ export function createInventoryRouter(deps: InventoryDependencies): Router {
   router.post("/stock-movements", createStockMovementController(deps));
   router.get("/stock-movements", listStockMovementsByWarehouseController(deps));
   router.get("/stock-movements/:movementUuid", getStockMovementController(deps));
+
+  // --- Batch --- (Ch.40) No DELETE route — Batch has no remove use case.
+  // `GET /batches` is filled by the by-Warehouse list only
+  // (list-batches-by-warehouse.controller.ts) — mirroring Inventory
+  // Adjustment's/Stock Movement's own precedent of exposing one list
+  // variant at the bare list route; the by-Product list controller exists
+  // (list-batches-by-product.controller.ts) but is deliberately not routed
+  // this milestone, per this milestone's own explicit 4-route limit.
+  router.post("/batches", createBatchController(deps));
+  router.get("/batches", listBatchesByWarehouseController(deps));
+  router.get("/batches/:batchUuid", getBatchController(deps));
+  router.put("/batches/:batchUuid", updateBatchController(deps));
+
+  // --- Reorder Level --- (Ch.42) No DELETE route — Reorder Level has no
+  // remove use case this milestone. `/reorder-levels/by-warehouse` (a static
+  // path) is registered before `/reorder-levels/:reorderLevelUuid` (a param
+  // route) deliberately — Express matches routes in registration order, so
+  // the literal segment must come first or every request for it would
+  // instead match `:reorderLevelUuid="by-warehouse"` (mirroring
+  // `/units/base-units`-before-`/units/:unitUuid` exactly). The bare
+  // `GET /reorder-levels` route carries the Company-scoped list; the
+  // Warehouse-scoped list is the second, equally-authorized list variant
+  // this milestone names, exposed at its own static sub-path (see
+  // list-reorder-levels-by-warehouse.controller.ts's own header comment).
+  router.post("/reorder-levels", createReorderLevelController(deps));
+  router.get("/reorder-levels", listReorderLevelsByCompanyController(deps));
+  router.get("/reorder-levels/by-warehouse", listReorderLevelsByWarehouseController(deps));
+  router.get("/reorder-levels/:reorderLevelUuid", getReorderLevelController(deps));
+  router.put("/reorder-levels/:reorderLevelUuid", updateReorderLevelController(deps));
 
   return router;
 }

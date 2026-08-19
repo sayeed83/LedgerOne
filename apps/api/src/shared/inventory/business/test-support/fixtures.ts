@@ -9,10 +9,13 @@ import { Warehouse } from "../../domain/entities/warehouse.entity";
 import { Stock } from "../../domain/entities/stock.entity";
 import { InventoryAdjustment } from "../../domain/entities/inventory-adjustment.entity";
 import { StockMovement } from "../../domain/entities/stock-movement.entity";
+import { Batch } from "../../domain/entities/batch.entity";
+import { ReorderLevel } from "../../domain/entities/reorder-level.entity";
 import { ProductStatus } from "../../domain/enums/product-status.enum";
 import { WarehouseStatus } from "../../domain/enums/warehouse-status.enum";
 import { AdjustmentType } from "../../domain/enums/adjustment-type.enum";
 import { StockMovementType } from "../../domain/enums/stock-movement-type.enum";
+import { BatchStatus } from "../../domain/enums/batch-status.enum";
 import { IInventoryRepository } from "../../domain/interfaces/inventory-repository.interface";
 import { ITransactionRunner } from "../../domain/interfaces/transaction-runner.interface";
 
@@ -154,6 +157,47 @@ export function buildStockMovement(overrides: Partial<StockMovement> = {}): Stoc
   return Object.assign(Object.create(StockMovement.prototype), base, overrides) as StockMovement;
 }
 
+export function buildBatch(overrides: Partial<Batch> = {}): Batch {
+  const base = new Batch(
+    1n,
+    "00000000-0000-0000-0000-000000000008",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    1n,
+    "00000000-0000-0000-0000-000000000200",
+    "B2027-03",
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    "0.000000",
+    BatchStatus.Active,
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(Batch.prototype), base, overrides) as Batch;
+}
+
+export function buildReorderLevel(overrides: Partial<ReorderLevel> = {}): ReorderLevel {
+  const base = new ReorderLevel(
+    1n,
+    "00000000-0000-0000-0000-000000000009",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    "00000000-0000-0000-0000-000000000200",
+    1n,
+    "100.000000",
+    "500.000000",
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(ReorderLevel.prototype), base, overrides) as ReorderLevel;
+}
+
 export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepository> {
   return {
     createProductCategory: jest.fn(),
@@ -197,6 +241,17 @@ export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepositor
     listStockMovementsByWarehouse: jest.fn(),
     listStockMovementsByProduct: jest.fn(),
     listStockMovementsByCompany: jest.fn(),
+    createBatch: jest.fn(),
+    updateBatch: jest.fn(),
+    findBatchByUuid: jest.fn(),
+    listBatchesByProduct: jest.fn(),
+    listBatchesByWarehouse: jest.fn(),
+    createReorderLevel: jest.fn(),
+    updateReorderLevel: jest.fn(),
+    findReorderLevelByUuid: jest.fn(),
+    findReorderLevelByWarehouseAndProduct: jest.fn(),
+    listReorderLevelsByWarehouse: jest.fn(),
+    listReorderLevelsByCompany: jest.fn(),
   };
 }
 

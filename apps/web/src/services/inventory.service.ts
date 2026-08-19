@@ -1,5 +1,8 @@
 import type {
+  BatchResponseDto,
+  CreateBatchRequestDto,
   CreateInventoryAdjustmentRequestDto,
+  CreateProductCategoryRequestDto,
   CreateProductRequestDto,
   CreateStockMovementRequestDto,
   CreateStockRequestDto,
@@ -8,10 +11,15 @@ import type {
   InventoryAdjustmentResponseDto,
   ProductCategoryResponseDto,
   ProductResponseDto,
+  CreateReorderLevelRequestDto,
+  ReorderLevelResponseDto,
+  UpdateReorderLevelRequestDto,
   StockMovementResponseDto,
   StockResponseDto,
   UnitResponseDto,
+  UpdateBatchRequestDto,
   UpdateInventoryAdjustmentRequestDto,
+  UpdateProductCategoryRequestDto,
   UpdateProductRequestDto,
   UpdateStockRequestDto,
   UpdateUnitRequestDto,
@@ -63,15 +71,40 @@ export async function updateUnit(unitUuid: string, payload: UpdateUnitRequestDto
   return response.data.data;
 }
 
-// --- Product Category (minimal, read-only) ---
-// Product Category has no frontend of its own yet — this one read method
-// exists only so Product's own ProductCategorySelect can list Product
-// Categories for a Company, not as part of a Product Category frontend.
+// --- Product Category ---
 
 export async function listProductCategoriesByCompany(companyUuid: string): Promise<ProductCategoryResponseDto[]> {
   const response = await apiClient.get<Envelope<ProductCategoryResponseDto[]>>("/inventory/product-categories", {
     params: { companyUuid },
   });
+  return response.data.data;
+}
+
+export async function getProductCategory(productCategoryUuid: string): Promise<ProductCategoryResponseDto> {
+  const response = await apiClient.get<Envelope<ProductCategoryResponseDto>>(
+    `/inventory/product-categories/${productCategoryUuid}`,
+  );
+  return response.data.data;
+}
+
+export async function createProductCategory(
+  payload: CreateProductCategoryRequestDto,
+): Promise<ProductCategoryResponseDto> {
+  const response = await apiClient.post<Envelope<ProductCategoryResponseDto>>(
+    "/inventory/product-categories",
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function updateProductCategory(
+  productCategoryUuid: string,
+  payload: UpdateProductCategoryRequestDto,
+): Promise<ProductCategoryResponseDto> {
+  const response = await apiClient.put<Envelope<ProductCategoryResponseDto>>(
+    `/inventory/product-categories/${productCategoryUuid}`,
+    payload,
+  );
   return response.data.data;
 }
 
@@ -215,5 +248,70 @@ export async function createStockMovement(
   payload: CreateStockMovementRequestDto,
 ): Promise<StockMovementResponseDto> {
   const response = await apiClient.post<Envelope<StockMovementResponseDto>>("/inventory/stock-movements", payload);
+  return response.data.data;
+}
+
+// --- Batch (Ch.40) ---
+
+export async function listBatchesByWarehouse(warehouseUuid: string): Promise<BatchResponseDto[]> {
+  const response = await apiClient.get<Envelope<BatchResponseDto[]>>("/inventory/batches", {
+    params: { warehouseUuid },
+  });
+  return response.data.data;
+}
+
+export async function getBatch(batchUuid: string): Promise<BatchResponseDto> {
+  const response = await apiClient.get<Envelope<BatchResponseDto>>(`/inventory/batches/${batchUuid}`);
+  return response.data.data;
+}
+
+export async function createBatch(payload: CreateBatchRequestDto): Promise<BatchResponseDto> {
+  const response = await apiClient.post<Envelope<BatchResponseDto>>("/inventory/batches", payload);
+  return response.data.data;
+}
+
+export async function updateBatch(batchUuid: string, payload: UpdateBatchRequestDto): Promise<BatchResponseDto> {
+  const response = await apiClient.put<Envelope<BatchResponseDto>>(`/inventory/batches/${batchUuid}`, payload);
+  return response.data.data;
+}
+
+// --- Reorder Level (Ch.42) ---
+
+export async function listReorderLevelsByCompany(companyUuid: string): Promise<ReorderLevelResponseDto[]> {
+  const response = await apiClient.get<Envelope<ReorderLevelResponseDto[]>>("/inventory/reorder-levels", {
+    params: { companyUuid },
+  });
+  return response.data.data;
+}
+
+export async function listReorderLevelsByWarehouse(warehouseUuid: string): Promise<ReorderLevelResponseDto[]> {
+  const response = await apiClient.get<Envelope<ReorderLevelResponseDto[]>>("/inventory/reorder-levels/by-warehouse", {
+    params: { warehouseUuid },
+  });
+  return response.data.data;
+}
+
+export async function getReorderLevel(reorderLevelUuid: string): Promise<ReorderLevelResponseDto> {
+  const response = await apiClient.get<Envelope<ReorderLevelResponseDto>>(
+    `/inventory/reorder-levels/${reorderLevelUuid}`,
+  );
+  return response.data.data;
+}
+
+export async function createReorderLevel(
+  payload: CreateReorderLevelRequestDto,
+): Promise<ReorderLevelResponseDto> {
+  const response = await apiClient.post<Envelope<ReorderLevelResponseDto>>("/inventory/reorder-levels", payload);
+  return response.data.data;
+}
+
+export async function updateReorderLevel(
+  reorderLevelUuid: string,
+  payload: UpdateReorderLevelRequestDto,
+): Promise<ReorderLevelResponseDto> {
+  const response = await apiClient.put<Envelope<ReorderLevelResponseDto>>(
+    `/inventory/reorder-levels/${reorderLevelUuid}`,
+    payload,
+  );
   return response.data.data;
 }

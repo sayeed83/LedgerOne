@@ -23,6 +23,11 @@ import {
   InventoryAdjustmentNotFoundError,
   StockMovementNotFoundError,
   StockMovementMissingRequiredWarehouseError,
+  BatchNotFoundError,
+  InvalidBatchDateRangeError,
+  ReorderLevelNotFoundError,
+  ReorderLevelAlreadyExistsError,
+  InvalidReorderLevelQuantityError,
 } from "../../business/inventory-errors";
 
 export interface HttpErrorMapping {
@@ -72,6 +77,21 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof StockMovementMissingRequiredWarehouseError) {
     return { status: 422, code: "INV_STOCK_MOVEMENT_INVALID_WAREHOUSE" };
+  }
+  if (error instanceof BatchNotFoundError) {
+    return { status: 404, code: "INV_BATCH_NOT_FOUND" };
+  }
+  if (error instanceof InvalidBatchDateRangeError) {
+    return { status: 422, code: "INV_INVALID_BATCH_DATE_RANGE" };
+  }
+  if (error instanceof ReorderLevelNotFoundError) {
+    return { status: 404, code: "INV_REORDER_LEVEL_NOT_FOUND" };
+  }
+  if (error instanceof ReorderLevelAlreadyExistsError) {
+    return { status: 409, code: "INV_REORDER_LEVEL_ALREADY_EXISTS" };
+  }
+  if (error instanceof InvalidReorderLevelQuantityError) {
+    return { status: 422, code: "INV_INVALID_REORDER_LEVEL_QUANTITY" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

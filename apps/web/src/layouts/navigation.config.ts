@@ -5,6 +5,7 @@ import {
   BuildingIcon,
   CalendarIcon,
   CoinsIcon,
+  FilterIcon,
   GridIcon,
   KeyIcon,
   LayersIcon,
@@ -40,12 +41,15 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   { label: "Journal Entries", href: "/accounting/journal-entries", icon: BookOpenIcon },
   { label: "Ledger", href: "/accounting/ledger", icon: ListIcon },
   { label: "Reports", href: "/accounting/reports", icon: BarChartIcon },
+  { label: "Product Categories", href: "/inventory/product-categories", icon: FilterIcon },
   { label: "Units of Measure", href: "/inventory/units", icon: LayersIcon },
   { label: "Products", href: "/inventory/products", icon: ListIcon },
   { label: "Warehouses", href: "/inventory/warehouses", icon: BuildingIcon },
   { label: "Stocks", href: "/inventory/stocks", icon: ListIcon },
   { label: "Adjustments", href: "/inventory/adjustments", icon: ListIcon },
   { label: "Stock Movements", href: "/inventory/stock-movements", icon: ArrowsRightLeftIcon },
+  { label: "Batches", href: "/inventory/batches", icon: CalendarIcon },
+  { label: "Reorder Levels", href: "/inventory/reorder-levels", icon: FilterIcon },
 ];
 
 export interface BreadcrumbItem {
@@ -125,6 +129,15 @@ export function getBreadcrumbTrail(pathname: string): BreadcrumbItem[] {
     }
   }
 
+  // Product Category's own first nested/detail-level route
+  // (`/inventory/product-categories/:productCategoryUuid`), mirroring the
+  // User Management branch above (flat one-level list + one detail route,
+  // no further nesting).
+  if (pathname.startsWith("/inventory/product-categories/")) {
+    trail.push({ label: "Product Categories", href: "/inventory/product-categories" });
+    trail.push({ label: "Details", href: pathname });
+  }
+
   // Inventory's own first nested/detail-level route
   // (`/inventory/units/:unitUuid`), mirroring the User Management branch
   // above (flat one-level list + one detail route, no further nesting).
@@ -165,6 +178,20 @@ export function getBreadcrumbTrail(pathname: string): BreadcrumbItem[] {
   // (`/inventory/stock-movements/:movementUuid`), mirroring Inventory Adjustment's own branch above.
   if (pathname.startsWith("/inventory/stock-movements/")) {
     trail.push({ label: "Stock Movements", href: "/inventory/stock-movements" });
+    trail.push({ label: "Details", href: pathname });
+  }
+
+  // Batch's own first nested/detail-level route
+  // (`/inventory/batches/:batchUuid`), mirroring Stock Movement's own branch above.
+  if (pathname.startsWith("/inventory/batches/")) {
+    trail.push({ label: "Batches", href: "/inventory/batches" });
+    trail.push({ label: "Details", href: pathname });
+  }
+
+  // Reorder Level's own first nested/detail-level route
+  // (`/inventory/reorder-levels/:reorderLevelUuid`), mirroring Batch's own branch above.
+  if (pathname.startsWith("/inventory/reorder-levels/")) {
+    trail.push({ label: "Reorder Levels", href: "/inventory/reorder-levels" });
     trail.push({ label: "Details", href: pathname });
   }
 

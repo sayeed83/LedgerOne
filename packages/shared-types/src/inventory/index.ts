@@ -5,3 +5,5 @@ export * from "./warehouse.dto";
 export * from "./stock.dto";
 export * from "./inventory-adjustment.dto";
 export * from "./stock-movement.dto";
+export * from "./batch.dto";
+export * from "./reorder-level.dto";

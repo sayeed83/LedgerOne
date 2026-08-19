@@ -106,3 +106,38 @@ export class StockMovementMissingRequiredWarehouseError extends DomainError {
     super(`Stock Movement of type '${movementType}' requires ${missingWarehouseSide} to be specified.`);
   }
 }
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Batch does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateBatch` on zero rows matched (`updateMany`+refetch pattern). */
+export class BatchNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Batch '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createBatch`/`updateBatch` when both a `manufactureDate` and an `expiryDate` are present (either newly supplied or already on the row) and the manufacture date falls after the expiry date (00_BUSINESS_RULES.md Ch.40.8 — "Expiry date, if provided, must be after the manufacture date"). */
+export class InvalidBatchDateRangeError extends DomainError {
+  constructor(public readonly manufactureDate: Date, public readonly expiryDate: Date) {
+    super(`Batch manufacture date '${manufactureDate.toISOString()}' must not be after expiry date '${expiryDate.toISOString()}'.`);
+  }
+}
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Reorder Level does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateReorderLevel` on zero rows matched (`updateMany`+refetch pattern). */
+export class ReorderLevelNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Reorder Level '${identifier}' was not found.`);
+  }
+}
+
+/** Raised by `createReorderLevel` when another (non-deleted) Reorder Level already exists for the same Warehouse/Product pair (00_BUSINESS_RULES.md Ch.42.7 ROL-101 — "A Reorder Level is defined per Product per Warehouse"), mirroring `findReorderLevelByWarehouseAndProduct`'s own natural key. */
+export class ReorderLevelAlreadyExistsError extends DomainError {
+  constructor(public readonly warehouseUuid: string, public readonly productId: bigint) {
+    super(`Reorder Level already exists for Warehouse '${warehouseUuid}' and Product '${productId}'.`);
+  }
+}
+
+/** Raised by `createReorderLevel`/`updateReorderLevel` when `reorderLevel` (the minimum threshold quantity) is negative (00_BUSINESS_RULES.md Ch.42.8 — "Reorder Level must be a non-negative quantity"). */
+export class InvalidReorderLevelQuantityError extends DomainError {
+  constructor(public readonly reorderLevel: string) {
+    super(`Reorder Level quantity '${reorderLevel}' must be a non-negative quantity.`);
+  }
+}

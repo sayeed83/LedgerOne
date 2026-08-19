@@ -271,6 +271,9 @@ model Product {
   /// Back-relation for Batch's real, in-module RESTRICT FK (Ch.40.9/40.10 "PRODUCT ||--o{ BATCH") — this milestone's Database layer only, no repository/service reads this relation yet.
   batches Batch[]
 
+  /// Back-relation for Reorder Level's real, in-module RESTRICT FK (Ch.42.10 "PRODUCT }o--o{ WAREHOUSE") — this milestone's Database layer only, no repository/service reads this relation yet. A Prisma-required relation-metadata field only; adds no column to this table (confirmed via `SHOW CREATE TABLE products`).
+  reorderLevels ReorderLevel[]
+
   /// Stocked (tracked in Inventory) vs. Non-Stocked (e.g. a service) classification, set at creation (Ch.34.7 PRD-002). Immutability once transacted (Ch.34.12) is a Business-layer concern.
   isStocked Boolean @map("is_stocked")
 
@@ -816,4 +819,86 @@ enum BatchStatus {
   DISPOSED
 
   @@map("batch_status")
+}
+
+// Reorder Level (00_BUSINESS_RULES.md Ch.42: a configured minimum Stock,
+// Ch.38, threshold per Product per Warehouse, below which a replenishment
+// action is triggered or suggested). Tenant-owned (`tenant_id`, MT-001).
+// Ch.42.5's own Business Lifecycle is "Static configuration, reviewed and
+// adjusted periodically" — no state machine, so no enum is defined here
+// (Ch.42 documents none).
+//
+// `companyUuid` and `warehouseUuid` are both cross-module references
+// (FK-002, no DB-level FK), mirroring Stock's/Inventory Adjustment's own
+// identical treatment of both fields exactly.
+//
+// `productId` is a real, in-module RESTRICT FK to this module's own
+// `products.id` (FK-001) — mirroring Stock's/Inventory Adjustment's/Stock
+// Movement's/Batch's own identical `productId` treatment exactly, since
+// Product is owned by this same Inventory module. This requires the one
+// Prisma-mandated back-relation list field on `Product` itself
+// (`reorderLevels ReorderLevel[]`, added alongside this model) — pure
+// relation metadata, not a database column (confirmed via `SHOW CREATE
+// TABLE products`); no other change was made to `Product`. (Reconsidered
+// from this model's first draft, which used a uuid-only `productUuid`
+// cross-reference solely to sidestep this one Prisma-required
+// back-relation line — on review, that was an unnecessary deviation from
+// every other same-module Product reference in this file, not a genuine
+// architectural conflict, so it has been corrected to match Stock's/
+// Inventory Adjustment's/Stock Movement's/Batch's own established
+// pattern.)
+//
+// ROL-101 ("A Reorder Level is defined per Product per Warehouse") is
+// enforced here as "at most one (non-deleted) Reorder Level row per Product
+// per Warehouse" via the unique constraint below (including `deletedAt`,
+// SD-004, reusable after soft delete) — mirroring STK-003's own identical
+// natural-key unique constraint on Stock.
+//
+// `reorderLevel` (the minimum threshold quantity) and `reorderQuantity`
+// (the suggested reorder quantity, Ch.42.3's own "Owns:" list) are both
+// `DECIMAL(18,6)`, mirroring Stock's/Inventory Adjustment's/Batch's own
+// quantity-column precision/scale precedent exactly — no handbook-
+// documented precision/scale exists for either field, so this is an
+// explicitly flagged, undocumented-but-consistent choice, not a silently
+// invented one. Neither has a default value — unlike Stock's own
+// automatically-maintained, zero-starting quantities, a Reorder Level is a
+// manually configured threshold with no natural zero-state default.
+// Ch.42.8's validation rules ("must be a non-negative quantity"; the
+// suggested reorder quantity "should be positive") are Business-layer
+// concerns, not DB CHECK constraints, mirroring every other cross-column/
+// numeric-range invariant deferred at every prior Database milestone in
+// this file.
+model ReorderLevel {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Cross-module reference to this module's own `warehouses.uuid` (FK-002) — no DB-level FK, mirroring Stock's/Inventory Adjustment's own `warehouseUuid` treatment exactly.
+  warehouseUuid String @db.Char(36) @map("warehouse_uuid")
+
+  /// Real, in-module RESTRICT FK to this module's own Product (Ch.34) — required, ROL-101 ("A Reorder Level is defined per Product per Warehouse"), mirroring Stock's/Inventory Adjustment's/Batch's own `productId` treatment exactly.
+  productId BigInt  @db.UnsignedBigInt @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Minimum threshold quantity (Ch.42.1/42.3) — DECIMAL(18,6), mirroring Stock's own quantity-column precedent (see file-level note above).
+  reorderLevel Decimal @db.Decimal(18, 6) @map("reorder_level")
+
+  /// Suggested reorder quantity (Ch.42.3) — DECIMAL(18,6), mirroring Stock's own quantity-column precedent (see file-level note above).
+  reorderQuantity Decimal @db.Decimal(18, 6) @map("reorder_quantity")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([warehouseUuid, productId, deletedAt], map: "uq_reorder_levels_warehouse_product_deleted_at")
+  @@index([tenantId, companyUuid], map: "idx_reorder_levels_tenant_company")
+  @@index([companyUuid, warehouseUuid], map: "idx_reorder_levels_company_warehouse")
+  @@index([warehouseUuid, productId], map: "idx_reorder_levels_warehouse_product")
+  @@index([tenantId, companyUuid, warehouseUuid], map: "idx_reorder_levels_tenant_company_warehouse")
+  @@map("reorder_levels")
 }

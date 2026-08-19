@@ -105,6 +105,32 @@
 // deferred to a later milestone. Its caller (`createStockMovement`) decides
 // *which* Warehouse(s) get *which* signed delta; this method only knows how
 // to apply one.
+//
+// Batch (Ch.40) is likewise tenant-owned (MT-001) with cross-module/
+// in-module uuid-reference fields `companyUuid`/`warehouseUuid` (FK-002, no
+// DB-level FK) and a real, in-module FK `productId` to this module's own
+// Product, mirroring Stock's/Inventory Adjustment's own reference shape
+// exactly. `listBatchesByProduct`/`listBatchesByWarehouse` are plain
+// persistence-level listings — no FEFO ordering (BAT-002), no
+// expired-Batch filtering/blocking (BAT-003), no BAT-001 "every Stock
+// Movement of a Batch-tracked Product must reference a Batch" enforcement,
+// and no expiry-after-manufacture validation (Ch.40.8) implemented here —
+// persistence only, all Business-layer concerns for a later milestone. This
+// milestone does not modify `Product`/`StockMovement`'s own repository
+// methods — `Product.isBatchTracked`/`StockMovement.batchId` (already
+// present at the Database layer) remain unsurfaced here, per explicit
+// instruction.
+//
+// Reorder Level (Ch.42) is likewise tenant-owned (MT-001) with
+// cross-module/in-module uuid-reference fields `companyUuid`/`warehouseUuid`
+// (FK-002, no DB-level FK) and a real, in-module FK `productId` to this
+// module's own Product, mirroring Stock's own reference shape exactly.
+// `findReorderLevelByWarehouseAndProduct` mirrors `findStockByWarehouseAndProduct`'s
+// own natural-key shape (ROL-101's own "at most one Reorder Level row per
+// Product per Warehouse"). No non-negative/positive validation (Ch.42.8), no
+// reorder-alert generation (Ch.42.6/ROL-102), and no Purchase Requisition
+// suggestion is implemented here — persistence only, all Business-layer (or
+// later-chapter) concerns for a future milestone.
 import { ProductCategory, CreateProductCategoryProps, UpdateProductCategoryProps } from "../entities/product-category.entity";
 import { Unit, CreateUnitProps, UpdateUnitProps } from "../entities/unit.entity";
 import { Product, CreateProductProps, UpdateProductProps } from "../entities/product.entity";
@@ -116,6 +142,8 @@ import {
   UpdateInventoryAdjustmentProps,
 } from "../entities/inventory-adjustment.entity";
 import { StockMovement, CreateStockMovementProps } from "../entities/stock-movement.entity";
+import { Batch, CreateBatchProps, UpdateBatchProps } from "../entities/batch.entity";
+import { ReorderLevel, CreateReorderLevelProps, UpdateReorderLevelProps } from "../entities/reorder-level.entity";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -241,4 +269,35 @@ export interface IInventoryRepository {
   listStockMovementsByProduct(tenantId: bigint, productId: bigint): Promise<StockMovement[]>;
   /** Every Stock Movement belonging to a single Company, across every Warehouse. */
   listStockMovementsByCompany(tenantId: bigint, companyUuid: string): Promise<StockMovement[]>;
+
+  createBatch(tenantId: bigint, props: CreateBatchProps, tx?: RepositoryTransaction): Promise<Batch>;
+  updateBatch(tenantId: bigint, uuid: string, props: UpdateBatchProps, tx?: RepositoryTransaction): Promise<Batch>;
+  findBatchByUuid(tenantId: bigint, uuid: string): Promise<Batch | null>;
+  /** Every Batch belonging to a single Product, across every Warehouse. */
+  listBatchesByProduct(tenantId: bigint, productId: bigint): Promise<Batch[]>;
+  /** Every Batch belonging to a single Warehouse. */
+  listBatchesByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<Batch[]>;
+
+  createReorderLevel(
+    tenantId: bigint,
+    props: CreateReorderLevelProps,
+    tx?: RepositoryTransaction,
+  ): Promise<ReorderLevel>;
+  updateReorderLevel(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateReorderLevelProps,
+    tx?: RepositoryTransaction,
+  ): Promise<ReorderLevel>;
+  findReorderLevelByUuid(tenantId: bigint, uuid: string): Promise<ReorderLevel | null>;
+  /** ROL-101's own natural key — at most one (non-deleted) Reorder Level row per Product per Warehouse. */
+  findReorderLevelByWarehouseAndProduct(
+    tenantId: bigint,
+    warehouseUuid: string,
+    productId: bigint,
+  ): Promise<ReorderLevel | null>;
+  /** Every Reorder Level belonging to a single Warehouse. */
+  listReorderLevelsByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<ReorderLevel[]>;
+  /** Every Reorder Level belonging to a single Company, across every Warehouse. */
+  listReorderLevelsByCompany(tenantId: bigint, companyUuid: string): Promise<ReorderLevel[]>;
 }

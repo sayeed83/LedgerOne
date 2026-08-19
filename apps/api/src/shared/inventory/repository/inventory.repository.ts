@@ -15,10 +15,13 @@ import {
   Stock as StockModel,
   InventoryAdjustment as InventoryAdjustmentModel,
   StockMovement as StockMovementModel,
+  Batch as BatchModel,
+  ReorderLevel as ReorderLevelModel,
   ProductStatus as PrismaProductStatus,
   WarehouseStatus as PrismaWarehouseStatus,
   AdjustmentType as PrismaAdjustmentType,
   StockMovementType as PrismaStockMovementType,
+  BatchStatus as PrismaBatchStatus,
 } from "../../../database/generated/client";
 import {
   ProductCategory,
@@ -35,10 +38,13 @@ import {
   UpdateInventoryAdjustmentProps,
 } from "../domain/entities/inventory-adjustment.entity";
 import { StockMovement, CreateStockMovementProps } from "../domain/entities/stock-movement.entity";
+import { Batch, CreateBatchProps, UpdateBatchProps } from "../domain/entities/batch.entity";
+import { ReorderLevel, CreateReorderLevelProps, UpdateReorderLevelProps } from "../domain/entities/reorder-level.entity";
 import { ProductStatus } from "../domain/enums/product-status.enum";
 import { WarehouseStatus } from "../domain/enums/warehouse-status.enum";
 import { AdjustmentType } from "../domain/enums/adjustment-type.enum";
 import { StockMovementType } from "../domain/enums/stock-movement-type.enum";
+import { BatchStatus } from "../domain/enums/batch-status.enum";
 import {
   ProductCategoryNotFoundError,
   UnitNotFoundError,
@@ -46,6 +52,8 @@ import {
   WarehouseNotFoundError,
   StockNotFoundError,
   InventoryAdjustmentNotFoundError,
+  BatchNotFoundError,
+  ReorderLevelNotFoundError,
 } from "../domain/errors/inventory.errors";
 import { IInventoryRepository, RepositoryTransaction } from "../domain/interfaces/inventory-repository.interface";
 
@@ -195,6 +203,52 @@ function toStockMovementDomain(row: StockMovementModel): StockMovement {
     row.referenceUuid,
     row.createdAt,
     row.createdBy,
+  );
+}
+
+/// `.toFixed()` (not `.toString()`) guarantees plain fixed-point decimal
+/// notation, never exponential notation, mirroring `toStockDomain`'s/
+/// `toInventoryAdjustmentDomain`'s/`toStockMovementDomain`'s own quantity
+/// mapping.
+function toBatchDomain(row: BatchModel): Batch {
+  return new Batch(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.companyUuid,
+    row.productId,
+    row.warehouseUuid,
+    row.batchNumber,
+    row.manufactureDate,
+    row.expiryDate,
+    row.quantity.toFixed(),
+    row.status as unknown as BatchStatus,
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+/// `.toFixed()` (not `.toString()`) guarantees plain fixed-point decimal
+/// notation, never exponential notation, mirroring `toStockDomain`'s/
+/// `toBatchDomain`'s own quantity mapping.
+function toReorderLevelDomain(row: ReorderLevelModel): ReorderLevel {
+  return new ReorderLevel(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.companyUuid,
+    row.warehouseUuid,
+    row.productId,
+    row.reorderLevel.toFixed(),
+    row.reorderQuantity.toFixed(),
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
   );
 }
 
@@ -787,5 +841,161 @@ export class PrismaInventoryRepository implements IInventoryRepository {
       orderBy: { id: "asc" },
     });
     return rows.map(toStockMovementDomain);
+  }
+
+  // Batch (Ch.40) is tenant-owned (MT-001) — every query below asserts
+  // `tenantId` explicitly. `companyUuid`/`warehouseUuid` (cross-module/
+  // in-module uuid references, FK-002) and `productId` (real, in-module FK)
+  // are accepted as plain values with no cross-repository existence
+  // validation, mirroring Stock's/Inventory Adjustment's own identical
+  // treatment. No BAT-001/BAT-002/BAT-003 enforcement, no
+  // expiry-after-manufacture validation (Ch.40.8) — persistence only, all
+  // Business-layer concerns for a later milestone.
+
+  async createBatch(tenantId: bigint, props: CreateBatchProps, tx?: RepositoryTransaction): Promise<Batch> {
+    const row = await this.client(tx).batch.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        companyUuid: props.companyUuid,
+        productId: props.productId,
+        warehouseUuid: props.warehouseUuid,
+        batchNumber: props.batchNumber,
+        manufactureDate: props.manufactureDate ?? null,
+        expiryDate: props.expiryDate ?? null,
+        quantity: props.quantity,
+        status: props.status ? (props.status as unknown as PrismaBatchStatus) : undefined,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toBatchDomain(row);
+  }
+
+  async updateBatch(tenantId: bigint, uuid: string, props: UpdateBatchProps, tx?: RepositoryTransaction): Promise<Batch> {
+    const client = this.client(tx);
+    const { count } = await client.batch.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: {
+        batchNumber: props.batchNumber,
+        manufactureDate: props.manufactureDate,
+        expiryDate: props.expiryDate,
+        quantity: props.quantity,
+        status: props.status ? (props.status as unknown as PrismaBatchStatus) : undefined,
+        updatedBy: props.updatedBy ?? undefined,
+      },
+    });
+    if (count === 0) {
+      throw new BatchNotFoundError(uuid);
+    }
+    const row = await client.batch.findFirst({ where: { tenantId, uuid } });
+    return toBatchDomain(row as BatchModel);
+  }
+
+  async findBatchByUuid(tenantId: bigint, uuid: string): Promise<Batch | null> {
+    const row = await prisma.batch.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toBatchDomain(row) : null;
+  }
+
+  async listBatchesByProduct(tenantId: bigint, productId: bigint): Promise<Batch[]> {
+    const rows = await prisma.batch.findMany({
+      where: { tenantId, productId, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toBatchDomain);
+  }
+
+  async listBatchesByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<Batch[]> {
+    const rows = await prisma.batch.findMany({
+      where: { tenantId, warehouseUuid, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toBatchDomain);
+  }
+
+  // Reorder Level (Ch.42) is tenant-owned (MT-001) — every query below
+  // asserts `tenantId` explicitly. `companyUuid`/`warehouseUuid`
+  // (cross-module/in-module uuid references, FK-002) and `productId` (real,
+  // in-module FK) are accepted as plain values with no cross-repository
+  // existence validation, mirroring Stock's own identical treatment. No
+  // non-negative/positive validation (Ch.42.8), no reorder-alert generation
+  // (ROL-102), and no Purchase Requisition suggestion — persistence only,
+  // all Business-layer (or later-chapter) concerns for a future milestone.
+
+  async createReorderLevel(
+    tenantId: bigint,
+    props: CreateReorderLevelProps,
+    tx?: RepositoryTransaction,
+  ): Promise<ReorderLevel> {
+    const row = await this.client(tx).reorderLevel.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        companyUuid: props.companyUuid,
+        warehouseUuid: props.warehouseUuid,
+        productId: props.productId,
+        reorderLevel: props.reorderLevel,
+        reorderQuantity: props.reorderQuantity,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toReorderLevelDomain(row);
+  }
+
+  async updateReorderLevel(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateReorderLevelProps,
+    tx?: RepositoryTransaction,
+  ): Promise<ReorderLevel> {
+    const client = this.client(tx);
+    const { count } = await client.reorderLevel.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: {
+        reorderLevel: props.reorderLevel,
+        reorderQuantity: props.reorderQuantity,
+        updatedBy: props.updatedBy ?? undefined,
+      },
+    });
+    if (count === 0) {
+      throw new ReorderLevelNotFoundError(uuid);
+    }
+    const row = await client.reorderLevel.findFirst({ where: { tenantId, uuid } });
+    return toReorderLevelDomain(row as ReorderLevelModel);
+  }
+
+  async findReorderLevelByUuid(tenantId: bigint, uuid: string): Promise<ReorderLevel | null> {
+    const row = await prisma.reorderLevel.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toReorderLevelDomain(row) : null;
+  }
+
+  async findReorderLevelByWarehouseAndProduct(
+    tenantId: bigint,
+    warehouseUuid: string,
+    productId: bigint,
+  ): Promise<ReorderLevel | null> {
+    const row = await prisma.reorderLevel.findFirst({
+      where: { tenantId, warehouseUuid, productId, deletedAt: null },
+    });
+    return row ? toReorderLevelDomain(row) : null;
+  }
+
+  async listReorderLevelsByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<ReorderLevel[]> {
+    const rows = await prisma.reorderLevel.findMany({
+      where: { tenantId, warehouseUuid, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toReorderLevelDomain);
+  }
+
+  async listReorderLevelsByCompany(tenantId: bigint, companyUuid: string): Promise<ReorderLevel[]> {
+    const rows = await prisma.reorderLevel.findMany({
+      where: { tenantId, companyUuid, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toReorderLevelDomain);
   }
 }
