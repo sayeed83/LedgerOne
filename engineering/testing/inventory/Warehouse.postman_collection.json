@@ -1,0 +1,707 @@
+{
+  "info": {
+    "_postman_id": "4d5e6f7a-8b9c-4d0e-1f2a-3b4c5d6e7f8a",
+    "name": "LedgerOne - Inventory (Warehouse)",
+    "description": "Inventory module (Warehouse) API collection (Create, Get, Update, List by Branch). Reflects the implementation exactly as shipped in apps/api/src/shared/inventory.\n\nDesign note (tenant-owned, X-Tenant-Id always required; header rewrite): identical posture to ProductCategory.postman_collection.json/Unit.postman_collection.json/Product.postman_collection.json — every /api/v1/inventory/* route sits behind jwt-auth.middleware.ts AND current-tenant.middleware.ts mounted with `{ rewriteHeaderAs: \"decimal\" }` (module-registry.ts), which overwrites `x-tenant-id` in place with the verified JWT claim before this module's own tenantIdHeaderSchema ever inspects it — so a missing/malformed X-Tenant-Id does not itself fail validation here either. No dedicated 'missing/malformed X-Tenant-Id' failure case is included for the same reason.\n\nKNOWN GAP, flagged explicitly (unlike Product Category/Unit/Product, this one has no in-collection workaround): Warehouse's `branchUuid` is a cross-module reference (FK-002/WHS-001) to Organization's `branches.uuid`, and there is no way to discover or create a valid one through THIS collection alone — Inventory's own Business layer never validates branchUuid's existence (create-warehouse.service.ts's own header comment: 'this Business layer depends only on IInventoryRepository, never on Organization's own repository'), so there is no Inventory endpoint to chain from. The `{{branchUuid}}` collection variable defaults to an empty string and MUST be filled in manually with a real Branch uuid from your local dev database before running the 'Success' requests below — create one via Organization's own collection at engineering/testing/organization/Organization.postman_collection.json (its Branch folder), then paste that Branch's uuid into this collection's `{{branchUuid}}` variable (or the shared LedgerOne.postman_environment.json's own `branchUuid` entry). This collection deliberately does not chain to Organization's collection to run it, mirroring this module's own established precedent (Product.postman_collection.json's Setup folder only creates fixtures Inventory itself owns — Product Category/Unit — never a cross-module Organization fixture).\n\nDesign note (name AND code uniqueness, both scoped per Branch, Ch.37.8): unlike Product's single productCode uniqueness rule, Warehouse enforces BOTH warehouseCode uniqueness and name uniqueness, independently, both scoped to the same Branch (create-warehouse.service.ts checks `findWarehouseByCode` then a `listWarehousesByBranch` name scan). This collection tests both violations separately.\n\nThere is no delete endpoint for Warehouse, so a collection-level pre-request script derives a `{{warehouseSuffix}}` from the current timestamp (once per Newman invocation) appended to every created warehouseCode/name, avoiding cross-run collisions.\n\nRun order for a full pass, top to bottom: `{{branchUuid}}` must be manually populated before running this collection at all; {{warehouseUuid}}/{{warehouseCode}}/{{warehouseName}} must be set (by 'Create Primary Warehouse - Success') before the Duplicate/Get/Update/List requests below run.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" },
+    { "key": "tenantId", "value": "900001", "type": "string" },
+    { "key": "companyUuid", "value": "11111111-1111-1111-1111-111111111111", "type": "string" },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    {
+      "key": "branchUuid",
+      "value": "",
+      "type": "string",
+      "description": "MUST be filled in manually with a real Branch uuid from your local dev database — see this collection's own top-level description. Create one via engineering/testing/organization/Organization.postman_collection.json's Branch folder."
+    },
+    { "key": "warehouseSuffix", "value": "", "type": "string" },
+    { "key": "warehouseUuid", "value": "", "type": "string" },
+    { "key": "warehouseCode", "value": "", "type": "string" },
+    { "key": "warehouseName", "value": "", "type": "string" },
+    { "key": "secondWarehouseUuid", "value": "", "type": "string" },
+    { "key": "secondWarehouseCode", "value": "", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request) so every",
+          "// request in this run shares the same fixture suffix, while two",
+          "// separate runs never collide on Ch.37.8's per-Branch",
+          "// code/name uniqueness rules (no delete endpoint exists to clean up",
+          "// between runs).",
+          "if (!pm.collectionVariables.get(\"warehouseSuffix\")) {",
+          "    pm.collectionVariables.set(\"warehouseSuffix\", String(Date.now()));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Warehouse",
+      "description": "`/api/v1/inventory/warehouses` — Ch.37. Every 'Success' request below requires {{branchUuid}} to already be populated with a real Branch uuid — see this collection's own top-level KNOWN GAP note.",
+      "item": [
+        {
+          "name": "Create Warehouse - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchUuid\": \"{{branchUuid}}\",\n  \"warehouseCode\": \"SHOULD-NOT-EXIST\",\n  \"name\": \"Should Not Be Created\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "No Authorization header at all — jwt-auth.middleware.ts rejects before current-tenant.middleware.ts, this module's own validation, or the branchUuid fixture requirement are ever reached."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Warehouse - Validation Error (Malformed Branch Uuid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchUuid\": \"not-a-uuid\",\n  \"warehouseCode\": \"x\",\n  \"name\": \"x\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "branchUuid fails the .uuid() schema rule — create-warehouse.dto.ts. This is a shape check only, independent of whether {{branchUuid}} has been populated."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Warehouse - Validation Error (Missing Required Fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Body omits branchUuid/warehouseCode/name entirely — fails create-warehouse.dto.ts's required-field schema."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Primary Warehouse - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchUuid\": \"{{branchUuid}}\",\n  \"warehouseCode\": \"LT-{{warehouseSuffix}}\",\n  \"name\": \"LiveTest Primary Warehouse {{warehouseSuffix}}\",\n  \"description\": \"Created by Warehouse.postman_collection.json\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "REQUIRES {{branchUuid}} to already be populated with a real Branch uuid (see this collection's own top-level KNOWN GAP note) — otherwise this request fails at the Organization side, not here. Defines the primary Warehouse used throughout this collection (00_BUSINESS_RULES.md Ch.37.1). Saves {{warehouseUuid}}/{{warehouseCode}}/{{warehouseName}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"warehouseUuid\", json.data.uuid);",
+                  "pm.collectionVariables.set(\"warehouseCode\", json.data.warehouseCode);",
+                  "pm.collectionVariables.set(\"warehouseName\", json.data.name);",
+                  "",
+                  "pm.test(\"Response exposes only business fields (never id/tenantId/createdBy/updatedBy/deletedAt)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test(\"status is ACTIVE, branchUuid matches\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "    pm.expect(json.data.branchUuid).to.eql(pm.collectionVariables.get(\"branchUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Warehouse - Duplicate Code (Same Branch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchUuid\": \"{{branchUuid}}\",\n  \"warehouseCode\": \"{{warehouseCode}}\",\n  \"name\": \"A Different Name {{warehouseSuffix}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Reuses {{warehouseCode}}, already registered by the previous request under the same Branch (Ch.37.8) — rejected by create-warehouse.service.ts's findWarehouseByCode check before any row is written."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_DUPLICATE_WAREHOUSE_CODE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_DUPLICATE_WAREHOUSE_CODE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Warehouse - Duplicate Name (Same Branch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchUuid\": \"{{branchUuid}}\",\n  \"warehouseCode\": \"LT-DIFF-{{warehouseSuffix}}\",\n  \"name\": \"{{warehouseName}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Reuses {{warehouseName}} with a distinct warehouseCode, still under the same Branch (Ch.37.8) — rejected by create-warehouse.service.ts's listWarehousesByBranch name scan before any row is written."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_DUPLICATE_WAREHOUSE_NAME\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_DUPLICATE_WAREHOUSE_NAME\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Second Warehouse - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchUuid\": \"{{branchUuid}}\",\n  \"warehouseCode\": \"LT-SECOND-{{warehouseSuffix}}\",\n  \"name\": \"LiveTest Second Warehouse {{warehouseSuffix}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A second, distinct Warehouse under the same Branch — used below to exercise Update's duplicate-code rejection. Saves {{secondWarehouseUuid}}/{{secondWarehouseCode}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"secondWarehouseUuid\", json.data.uuid);",
+                  "pm.collectionVariables.set(\"secondWarehouseCode\", json.data.warehouseCode);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Warehouse - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses", "not-a-uuid"]
+            },
+            "description": "warehouseUuid path param fails the .uuid() schema rule."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Warehouse - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_WAREHOUSE_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_WAREHOUSE_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Warehouse - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses/{{warehouseUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses", "{{warehouseUuid}}"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the Primary Warehouse\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"warehouseUuid\"));",
+                  "    pm.expect(json.data.warehouseCode).to.eql(pm.collectionVariables.get(\"warehouseCode\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Warehouse - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses", "00000000-0000-0000-0000-000000000000"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Irrelevant\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_WAREHOUSE_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_WAREHOUSE_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Warehouse - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses/{{warehouseUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses", "{{warehouseUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"LiveTest Primary Warehouse {{warehouseSuffix}} (Revised)\",\n  \"description\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Revises name and explicitly clears description (null), leaving warehouseCode/status untouched (omitted, not null). branchUuid has no field here at all — immutable on Warehouse, not an updatable field (update-warehouse.dto.ts)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Name was revised and description cleared\", function () {",
+                  "    pm.expect(json.data.name).to.eql(\"LiveTest Primary Warehouse \" + pm.collectionVariables.get(\"warehouseSuffix\") + \" (Revised)\");",
+                  "    pm.expect(json.data.description).to.eql(null);",
+                  "});",
+                  "",
+                  "pm.test(\"warehouseCode and branchUuid are unchanged\", function () {",
+                  "    pm.expect(json.data.warehouseCode).to.eql(pm.collectionVariables.get(\"warehouseCode\"));",
+                  "    pm.expect(json.data.branchUuid).to.eql(pm.collectionVariables.get(\"branchUuid\"));",
+                  "});",
+                  "pm.collectionVariables.set(\"warehouseName\", json.data.name);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Warehouse - Duplicate Code (Same Branch)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses/{{warehouseUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses", "{{warehouseUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"warehouseCode\": \"{{secondWarehouseCode}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Attempts to rename the Primary Warehouse's code to {{secondWarehouseCode}}, already used by the Second Warehouse created above, same Branch — rejected by update-warehouse.service.ts."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_DUPLICATE_WAREHOUSE_CODE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_DUPLICATE_WAREHOUSE_CODE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Warehouses By Branch - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses?branchUuid={{branchUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"],
+              "query": [{ "key": "branchUuid", "value": "{{branchUuid}}" }]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array including the Primary Warehouse\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    const uuids = json.data.map((w) => w.uuid);",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"warehouseUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Warehouses By Branch - Validation Error (Missing branchUuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/warehouses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "warehouses"]
+            },
+            "description": "branchUuid is required, not an optional filter — list-warehouses-by-branch-query.dto.ts."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

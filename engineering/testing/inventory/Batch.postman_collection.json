@@ -1,0 +1,949 @@
+{
+  "info": {
+    "_postman_id": "d1e2f3a4-5b6c-4d7e-8f90-1a2b3c4d5e6f",
+    "name": "LedgerOne - Inventory (Batch)",
+    "description": "Inventory module (Batch) API collection (Create, Get, Update, List-By-Warehouse Batch). Reflects the implementation exactly as shipped in apps/api/src/shared/inventory (Ch.40). No DELETE route is mounted for Batch at all this milestone \u2014 status is a plain field settable on create/update, there are no explicit lifecycle-transition endpoints (contrast Currency's activate/deactivate pair).\n\nCRITICAL GAP \u2014 manual productId fixture required: Batch's create/update contract takes a real internal numeric productId (a bigint, e.g. \"1\"), never a productUuid. This is a deliberate backend design choice (PK-003 forbids serializing a Product's internal id \u2014 GET /products/:uuid only ever returns uuid), so there is NO HTTP endpoint anywhere in this API that can resolve a productUuid to its internal productId for you. This collection therefore CANNOT self-discover a valid {{productId}} through the API. Before running: connect to local MySQL and run `SELECT id FROM products WHERE uuid = '<real product uuid>'` for a Product that actually exists in your local database, then overwrite the {{productId}} collection variable (defaulted below to \"1\", a placeholder) with that real id. A stale or wrong {{productId}} makes every Batch request in this collection fail with a not-found-style error from the Business layer \u2014 that is expected, not a sign this collection itself is broken.\n\nCRITICAL GAP \u2014 manual warehouseUuid fixture required: {{warehouseUuid}} defaults to an empty string and MUST be filled in with a real Warehouse uuid before running this collection \u2014 create one first via the sibling Warehouse.postman_collection.json (or reuse one already in your local database) and copy its uuid into the {{warehouseUuid}} collection variable. Every request below either sends it in the body or as the required ?warehouseUuid= list-query param, so an empty value fails validation immediately.\n\nEvery route requires Authorization: Bearer {{accessToken}} AND X-Tenant-Id: {{tenantId}} \u2014 a request with no Authorization header 401s with AUTH_MISSING_TOKEN; a missing/malformed X-Tenant-Id header or a malformed request body 422s with VALIDATION_ERROR; unmapped Inventory business errors 422 with INV_DOMAIN_ERROR. {{companyUuid}} defaults to 11111111-1111-1111-1111-111111111111, the shared fixture Company this repo's collections assume exists locally.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "900001",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    {
+      "key": "companyUuid",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "type": "string"
+    },
+    {
+      "key": "warehouseUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "productId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "batchUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "batchNoDatesUuid",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Batch",
+      "item": [
+        {
+          "name": "Create Batch - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"warehouseUuid\": \"{{warehouseUuid}}\",\n  \"batchNumber\": \"BATCH-AUTH-CHECK\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "No Authorization header at all \u2014 fails jwt-auth.middleware.ts before this module's own request validation ever runs."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Batch - Validation Error (Missing X-Tenant-Id Header)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"warehouseUuid\": \"{{warehouseUuid}}\",\n  \"batchNumber\": \"BATCH-TENANT-CHECK\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "X-Tenant-Id header omitted entirely \u2014 current-tenant.middleware.ts rejects the request with VALIDATION_ERROR before create-batch.dto.ts's own body schema is ever evaluated."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Batch - Validation Error (Missing Required Fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Body omits productId/warehouseUuid/batchNumber entirely \u2014 fails create-batch.dto.ts's required-field schema."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Batch - Validation Error (Non-Numeric productId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"not-a-numeric-id\",\n  \"warehouseUuid\": \"{{warehouseUuid}}\",\n  \"batchNumber\": \"BATCH-BAD-PRODUCT-ID\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "productId must be a decimal numeric string (create-batch.dto.ts's `^\\d+$` regex) \u2014 a productUuid-shaped value is rejected here, since Batch takes a real internal productId, never a productUuid (see this collection's own top-level description for why no HTTP endpoint can resolve one for you)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Batch - Success (No Dates)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"warehouseUuid\": \"{{warehouseUuid}}\",\n  \"batchNumber\": \"BATCH-NO-DATES-001\",\n  \"quantity\": \"100\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "manufactureDate/expiryDate are both optional (Ch.40.3 never states either is mandatory) \u2014 this request omits both entirely, a distinct success case from the one below that sets both dates. Requires {{warehouseUuid}} to be a real Warehouse uuid and {{productId}} a real internal numeric Product id (see this collection's top-level description)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"batchNoDatesUuid\", json.data.uuid);",
+                  "",
+                  "pm.test(\"Response exposes only business fields (never id/tenantId/createdBy/updatedBy/deletedAt)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test(\"manufactureDate and expiryDate are both null\", function () {",
+                  "    pm.expect(json.data.manufactureDate).to.eql(null);",
+                  "    pm.expect(json.data.expiryDate).to.eql(null);",
+                  "});",
+                  "",
+                  "pm.test(\"productId is serialized as a string\", function () {",
+                  "    pm.expect(json.data.productId).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Batch - Success (With Valid Date Range)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"warehouseUuid\": \"{{warehouseUuid}}\",\n  \"batchNumber\": \"BATCH-WITH-DATES-001\",\n  \"manufactureDate\": \"2026-01-01\",\n  \"expiryDate\": \"2026-12-31\",\n  \"quantity\": \"50\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "expiryDate (2026-12-31) is after manufactureDate (2026-01-01), satisfying Ch.40.8's date-range invariant. Saves {{batchUuid}} for the Get/Update requests below."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"batchUuid\", json.data.uuid);",
+                  "",
+                  "pm.test(\"Response exposes only business fields (never id/tenantId/createdBy/updatedBy/deletedAt)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test(\"manufactureDate/expiryDate/status round-trip\", function () {",
+                  "    pm.expect(json.data.manufactureDate).to.not.eql(null);",
+                  "    pm.expect(json.data.expiryDate).to.not.eql(null);",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Batch - Invalid Date Range (Expiry Before Manufacture)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"warehouseUuid\": \"{{warehouseUuid}}\",\n  \"batchNumber\": \"BATCH-BAD-DATE-RANGE-001\",\n  \"manufactureDate\": \"2026-06-01\",\n  \"expiryDate\": \"2026-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Ch.40.8: \"expiry date, if provided, must be after the manufacture date\" \u2014 expiryDate (2026-01-01) is earlier than manufactureDate (2026-06-01), rejected by the Business layer's InvalidBatchDateRangeError before any row is written."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_INVALID_BATCH_DATE_RANGE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_INVALID_BATCH_DATE_RANGE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Batch - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches",
+                "not-a-uuid"
+              ]
+            },
+            "description": "batchUuid path param fails the .uuid() schema rule (batch-uuid.schema.ts)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Batch - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_BATCH_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_BATCH_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Batch - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches/{{batchUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches",
+                "{{batchUuid}}"
+              ]
+            },
+            "description": "Fetches the Batch created by 'Create Batch - Success (With Valid Date Range)' above."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the created Batch\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"batchUuid\"));",
+                  "    pm.expect(json.data.batchNumber).to.eql(\"BATCH-WITH-DATES-001\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Batch - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batchNumber\": \"Nope\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_BATCH_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_BATCH_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Batch - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches/{{batchUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches",
+                "{{batchUuid}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batchNumber\": \"BATCH-WITH-DATES-001-REVISED\",\n  \"quantity\": \"40\",\n  \"status\": \"DEPLETED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Revises batchNumber/quantity/status only \u2014 productId/warehouseUuid are NOT updatable fields on update-batch.dto.ts (the Business layer's own UpdateBatchProps never accepts them), so this request never attempts to send them."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"batchNumber/quantity/status were revised\", function () {",
+                  "    pm.expect(json.data.batchNumber).to.eql(\"BATCH-WITH-DATES-001-REVISED\");",
+                  "    pm.expect(json.data.quantity).to.eql(\"40\");",
+                  "    pm.expect(json.data.status).to.eql(\"DEPLETED\");",
+                  "});",
+                  "",
+                  "pm.test(\"productId/warehouseUuid are unchanged (not updatable)\", function () {",
+                  "    pm.expect(json.data.warehouseUuid).to.eql(pm.collectionVariables.get(\"warehouseUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Batches By Warehouse - Validation Error (Missing warehouseUuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ]
+            },
+            "description": "warehouseUuid is a required query param on the only GET /batches list variant actually routed this milestone (list-batches-by-warehouse.controller.ts) \u2014 a by-Product list controller exists in the codebase but is deliberately not mounted at any route, so there is no way to list Batches without a warehouseUuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Batches By Warehouse - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/batches?warehouseUuid={{warehouseUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "batches"
+              ],
+              "query": [
+                {
+                  "key": "warehouseUuid",
+                  "value": "{{warehouseUuid}}"
+                }
+              ]
+            },
+            "description": "The ONLY list variant actually routed for Batch this milestone (Ch.40) \u2014 GET /batches?warehouseUuid= is filled by list-batches-by-warehouse.controller.ts. A by-Product list use case exists in the Business layer but is not exposed at any route."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array including the created Batches\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    const uuids = json.data.map((b) => b.uuid);",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"batchUuid\"));",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"batchNoDatesUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

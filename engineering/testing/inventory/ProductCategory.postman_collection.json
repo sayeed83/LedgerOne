@@ -1,0 +1,799 @@
+{
+  "info": {
+    "_postman_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "name": "LedgerOne - Inventory (Product Category)",
+    "description": "Inventory module (Product Category) API collection (Create, Get, Update, List). Reflects the implementation exactly as shipped in apps/api/src/shared/inventory.\n\nDesign note (tenant-owned, X-Tenant-Id always required): every Inventory route sits behind jwt-auth.middleware.ts AND current-tenant.middleware.ts mounted with `{ rewriteHeaderAs: \"decimal\" }` (module-registry.ts) — unlike Accounting's Currency (platform-owned, no tenant header at all), every Inventory endpoint requires both a verified Bearer token and a resolvable tenant.\n\nDesign note (X-Tenant-Id is rewritten in place, mirroring Exchange Rate exactly): because current-tenant.middleware.ts's `rewriteHeaderAs: \"decimal\"` option overwrites the `x-tenant-id` header in place with the server-verified JWT claim BEFORE this module's own `tenantIdHeaderSchema` ever inspects it, a request with a missing or malformed `X-Tenant-Id` header does NOT itself fail validation — the same documented behavior already established by Accounting's Exchange Rate/Tax Group/Tax Rule collections (see Currency.postman_collection.json's own design note). This collection therefore does not include a dedicated 'missing/malformed X-Tenant-Id' failure case for Product Category; the header is still sent on every request below purely for documentation/readability, and a genuinely missing Authorization Bearer token (checked by jwt-auth.middleware.ts, which runs BEFORE current-tenant.middleware.ts) still 401s as normal.\n\nDesign note (hierarchy-level name uniqueness, Ch.35.8): Product Category name uniqueness is scoped to the SAME Company AND the SAME parent (including two root-level Categories that both have no parent) — not Company-wide. This collection creates a Primary (root) and Second (root) Product Category, a Child Product Category nested under the Primary, and demonstrates that the Child's name is allowed to collide with a root-level name because they sit at different hierarchy levels. There is no delete endpoint for Product Category, so a collection-level pre-request script derives a `{{pcSuffix}}` from the current timestamp (once per Newman invocation) appended to every created name, avoiding cross-run collisions — a simplified version of Currency's own `Date.now()`-based uniqueness trick (no base26 ISO-code algorithm needed here, plain names suffice).\n\nDesign note (response omits parentProductCategoryUuid, a documented Handbook Deviation, not a bug): product-category.response.dto.ts deliberately omits `parentProductCategoryUuid` from the response entirely (an extra Repository lookup per row this milestone's controllers may not make) — mirrored from Account Group's/Tax Rule's/Exchange Rate's own carried-forward reasoning. This collection's success tests assert `defaultTaxGroupUuid`/`companyUuid`/`name`/timestamps are present but never assert on `parentProductCategoryUuid`'s presence or absence in the body beyond the PK-003 internal-field checks (which cover `id`/`tenantId`/`createdBy`/`updatedBy`/`deletedAt`, a different and unrelated set of fields).\n\nRun order for a full pass, top to bottom: {{productCategoryUuid}}/{{productCategoryName}} and {{secondProductCategoryUuid}}/{{secondProductCategoryName}} must both be set (by the two root-level 'Create ... Product Category - Success' requests) before the Child Product Category, Update, or List requests run.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "900001",
+      "type": "string"
+    },
+    {
+      "key": "companyUuid",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    { "key": "pcSuffix", "value": "", "type": "string" },
+    { "key": "productCategoryUuid", "value": "", "type": "string" },
+    { "key": "productCategoryName", "value": "", "type": "string" },
+    { "key": "secondProductCategoryUuid", "value": "", "type": "string" },
+    { "key": "secondProductCategoryName", "value": "", "type": "string" },
+    { "key": "childProductCategoryUuid", "value": "", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request) so every",
+          "// request in this run shares the same fixture suffix, while two",
+          "// separate runs never collide on Ch.35.8's per-hierarchy-level name",
+          "// uniqueness rule (no delete endpoint exists to clean up between runs).",
+          "if (!pm.collectionVariables.get(\"pcSuffix\")) {",
+          "    pm.collectionVariables.set(\"pcSuffix\", String(Date.now()));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        // Express's own default 404 for a genuinely unmounted route",
+          "        // (e.g. PUT/DELETE on a resource with no such endpoint) is a",
+          "        // plain HTML page, not this module's JSON envelope — expected",
+          "        // and intentional for the 'Historical Immutability' checks.",
+          "        return;",
+          "    }",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Product Category",
+      "description": "`/api/v1/inventory/product-categories` — Ch.35.",
+      "item": [
+        {
+          "name": "Create Product Category - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"Should Not Be Created\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "No Authorization header at all — jwt-auth.middleware.ts rejects before current-tenant.middleware.ts or this module's own validation ever run."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product Category - Validation Error (Malformed Company Uuid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"not-a-uuid\",\n  \"name\": \"x\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "companyUuid fails the .uuid() schema rule — create-product-category.dto.ts."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product Category - Validation Error (Missing Required Fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Body omits companyUuid/name entirely — fails create-product-category.dto.ts's required-field schema."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Primary Product Category - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"LiveTest Root Category {{pcSuffix}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A root-level Product Category (no parentProductCategoryUuid) for {{companyUuid}} (00_BUSINESS_RULES.md Ch.35.1). Saves {{productCategoryUuid}}/{{productCategoryName}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"productCategoryUuid\", json.data.uuid);",
+                  "pm.collectionVariables.set(\"productCategoryName\", json.data.name);",
+                  "",
+                  "pm.test(\"Response exposes only business fields (never id/tenantId/createdBy/updatedBy/deletedAt)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test(\"defaultTaxGroupUuid defaults to null\", function () {",
+                  "    pm.expect(json.data.defaultTaxGroupUuid).to.eql(null);",
+                  "});",
+                  "",
+                  "pm.test(\"companyUuid matches the request\", function () {",
+                  "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product Category - Duplicate Name (Same Hierarchy Level)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"{{productCategoryName}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Reuses {{productCategoryName}} with no parent — another root-level Category under the same Company, same hierarchy level (00_BUSINESS_RULES.md Ch.35.8) — rejected by create-product-category.service.ts before any row is written."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_DUPLICATE_PRODUCT_CATEGORY_NAME\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_DUPLICATE_PRODUCT_CATEGORY_NAME\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product Category - Parent Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"LiveTest Orphan Category {{pcSuffix}}\",\n  \"parentProductCategoryUuid\": \"00000000-0000-0000-0000-000000000000\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A well-formed but non-existent parentProductCategoryUuid — rejected before any row is written, resolved first per PK-003."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_PRODUCT_CATEGORY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_PRODUCT_CATEGORY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Second Product Category - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"LiveTest Second Root Category {{pcSuffix}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A second, distinct root-level Product Category under the same Company — used below to exercise Update's duplicate-name rejection, and as the parent-target contrast for the Child Product Category's hierarchy-level test."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"secondProductCategoryUuid\", json.data.uuid);",
+                  "pm.collectionVariables.set(\"secondProductCategoryName\", json.data.name);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Child Product Category - Success (Same Name Allowed At Different Hierarchy Level)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"{{productCategoryName}}\",\n  \"parentProductCategoryUuid\": \"{{secondProductCategoryUuid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Reuses {{productCategoryName}} (the Primary root Category's own name) but nested under the Second Product Category — allowed because Ch.35.8's uniqueness rule is scoped per hierarchy level (Company + parent), and this Child's parent differs from the Primary's own (no) parent. Saves {{childProductCategoryUuid}}. The response deliberately omits parentProductCategoryUuid (a documented Handbook Deviation, not verified here)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"childProductCategoryUuid\", json.data.uuid);",
+                  "",
+                  "pm.test(\"Name matches the Primary Product Category's own name, accepted at a different hierarchy level\", function () {",
+                  "    pm.expect(json.data.name).to.eql(pm.collectionVariables.get(\"productCategoryName\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product Category - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories", "not-a-uuid"]
+            },
+            "description": "productCategoryUuid path param fails the .uuid() schema rule."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product Category - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_PRODUCT_CATEGORY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_PRODUCT_CATEGORY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product Category - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories/{{productCategoryUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories", "{{productCategoryUuid}}"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the Primary Product Category\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"productCategoryUuid\"));",
+                  "    pm.expect(json.data.companyUuid).to.eql(pm.collectionVariables.get(\"companyUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product Category - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories", "00000000-0000-0000-0000-000000000000"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Irrelevant\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_PRODUCT_CATEGORY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_PRODUCT_CATEGORY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product Category - Duplicate Name (Same Hierarchy Level)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories/{{productCategoryUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories", "{{productCategoryUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{secondProductCategoryName}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Attempts to rename the Primary (root) Product Category to {{secondProductCategoryName}}, already used by the Second Product Category at the same (root) hierarchy level — rejected by update-product-category.service.ts."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_DUPLICATE_PRODUCT_CATEGORY_NAME\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_DUPLICATE_PRODUCT_CATEGORY_NAME\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product Category - Parent Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories/{{secondProductCategoryUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories", "{{secondProductCategoryUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentProductCategoryUuid\": \"00000000-0000-0000-0000-000000000000\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A well-formed but non-existent parentProductCategoryUuid — resolved first, before any row is updated (PK-003)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_PRODUCT_CATEGORY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_PRODUCT_CATEGORY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product Category - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories/{{productCategoryUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories", "{{productCategoryUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"LiveTest Root Category {{pcSuffix}} (Revised)\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Revises name only, leaving parentProductCategoryUuid/defaultTaxGroupUuid untouched (omitted, not null — Ch.35.5)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Name was revised\", function () {",
+                  "    pm.expect(json.data.name).to.eql(\"LiveTest Root Category \" + pm.collectionVariables.get(\"pcSuffix\") + \" (Revised)\");",
+                  "});",
+                  "pm.collectionVariables.set(\"productCategoryName\", json.data.name);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Product Categories - Success (No Filter)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array containing every created Product Category\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    const uuids = json.data.map((c) => c.uuid);",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"productCategoryUuid\"));",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"secondProductCategoryUuid\"));",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"childProductCategoryUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Product Categories - Filtered By CompanyUuid",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories?companyUuid={{companyUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"],
+              "query": [{ "key": "companyUuid", "value": "{{companyUuid}}" }]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Includes the Primary Product Category\", function () {",
+                  "    const uuids = json.data.map((c) => c.uuid);",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"productCategoryUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

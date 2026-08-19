@@ -1,0 +1,934 @@
+{
+  "info": {
+    "_postman_id": "6418a024-c3a4-4814-8a47-877c8ee710e8",
+    "name": "LedgerOne - Inventory (Stock Movement)",
+    "description": "Inventory module \u2014 Stock Movement (`/api/v1/inventory/stock-movements`). Reflects the implementation exactly as shipped in apps/api/src/shared/inventory (create-stock-movement.dto.ts, stock-movement.response.dto.ts).\n\nAPPEND-ONLY / IMMUTABLE (Ch.39.5, STM-002) \u2014 there is NO update or delete endpoint for Stock Movement at all (index.ts only mounts POST/GET, never PUT/DELETE for /stock-movements). This collection therefore contains no PUT/DELETE requests and no 'Historical Immutability' 404 probe either (unlike Exchange Rate's own collection) \u2014 the route is simply never mounted, by design, and there is nothing further to demonstrate about it here.\n\nMANUAL FIXTURE GAP \u2014 read before running (applies to every request in this collection): `productId` is the Business layer's own contract for Stock Movement (a real, in-module numeric bigint FK, not a `productUuid` resolved to one) \u2014 there is NO endpoint anywhere that returns a Product's internal numeric id (06_DATABASE_STANDARDS.md PK-003 forbids ever serializing it \u2014 `GET /products/:uuid` only ever returns `uuid`). `{{productId}}` defaults to \"1\", a plausible first-row id on a freshly-seeded local dev DB \u2014 before running this collection, manually verify it against your local MySQL (e.g. `SELECT id FROM products WHERE uuid = '<real product uuid>'`) and replace {{productId}} with the real value. A stale/wrong {{productId}} makes every request fail with a NotFound-style domain error \u2014 a sign of a stale fixture, not proof this collection is broken. `{{warehouseUuid}}`/`{{otherWarehouseUuid}}` similarly default to \"\" and must be filled in from real Warehouses (create them via the sibling `Warehouse.postman_collection.json`) before running TRANSFER-shaped requests, which need two distinct warehouses. Same treatment the repo already gives other manual-fixture gaps (Authentication hardcodes `tenantId=1`; Warehouse needs a manual `branchUuid`).\n\nDOCUMENTED SCOPE LIMITATION: creating a Stock Movement also atomically updates the real Stock on-hand quantity for the affected Warehouse/Product pair (STM-001, create-stock-movement.service.ts). This collection only verifies the Stock Movement resource's own HTTP response shape \u2014 it does not chain into the Stock collection's own GET to assert the downstream Stock side-effect (that would require cross-collection chaining, out of scope here; treated as a documented limitation rather than silently worked around).\n\nEvery route requires `Authorization: Bearer {{accessToken}}` AND `X-Tenant-Id: {{tenantId}}`. No Authorization header at all fails jwt-auth.middleware.ts before this module's own request validation ever runs \u2014 401 `AUTH_MISSING_TOKEN`. A missing/malformed `X-Tenant-Id` header, or a malformed request body, is rejected as 422 `VALIDATION_ERROR`. STM-003's per-movementType required-warehouse rule is enforced by create-stock-movement.service.ts and surfaces as 422 `INV_STOCK_MOVEMENT_INVALID_WAREHOUSE` (StockMovementMissingRequiredWarehouseError, domain-error-http-mapping.ts). Business errors not individually mapped fall back to 422 `INV_DOMAIN_ERROR`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "900001",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    {
+      "key": "companyUuid",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "type": "string"
+    },
+    {
+      "key": "productId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "warehouseUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otherWarehouseUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "movementUuid",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        // Express's own default 404 for a genuinely unmounted route is a",
+          "        // plain HTML page, not this module's JSON envelope \u2014 not",
+          "        // expected for any request in this collection (every Inventory",
+          "        // resource here has all its mounted routes exercised), but",
+          "        // guarded the same way every other collection in this repo",
+          "        // guards it.",
+          "        return;",
+          "    }",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Stock Movement",
+      "description": "Append-only resource (Ch.39.5/STM-002) \u2014 no PUT/DELETE endpoint is mounted for /stock-movements at all, so no update/delete requests exist in this folder by design.",
+      "item": [
+        {
+          "name": "Create Stock Movement - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"destinationWarehouseUuid\": \"{{warehouseUuid}}\",\n  \"movementType\": \"RECEIPT\",\n  \"quantity\": \"10.0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "No Authorization header at all \u2014 fails jwt-auth.middleware.ts before this module's own request validation ever runs."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Movement - Validation Error (Missing X-Tenant-Id Header)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"destinationWarehouseUuid\": \"{{warehouseUuid}}\",\n  \"movementType\": \"RECEIPT\",\n  \"quantity\": \"10.0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "No X-Tenant-Id header \u2014 rejected as 422 VALIDATION_ERROR by tenant-context validation."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Movement - Validation Error (Malformed productId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"not-numeric\",\n  \"destinationWarehouseUuid\": \"{{warehouseUuid}}\",\n  \"movementType\": \"RECEIPT\",\n  \"quantity\": \"10.0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "productId fails the ^\\d+$ schema rule (create-stock-movement.dto.ts) \u2014 must be a decimal numeric string."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Movement - Validation Error (Missing Required movementType)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"destinationWarehouseUuid\": \"{{warehouseUuid}}\",\n  \"quantity\": \"10.0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Body omits the required movementType entirely \u2014 fails create-stock-movement.dto.ts's required-field schema."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Movement - Invalid Warehouse (RECEIPT Missing destinationWarehouseUuid, STM-003)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"movementType\": \"RECEIPT\",\n  \"quantity\": \"10.0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "STM-003: a RECEIPT movement requires destinationWarehouseUuid (and no sourceWarehouseUuid) \u2014 supplying neither is rejected by create-stock-movement.service.ts's own StockMovementMissingRequiredWarehouseError before any row is written."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_STOCK_MOVEMENT_INVALID_WAREHOUSE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_STOCK_MOVEMENT_INVALID_WAREHOUSE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Movement - RECEIPT - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"destinationWarehouseUuid\": \"{{warehouseUuid}}\",\n  \"movementType\": \"RECEIPT\",\n  \"quantity\": \"25.0000\",\n  \"referenceType\": \"PURCHASE_ORDER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "STM-003: RECEIPT requires destinationWarehouseUuid only (no sourceWarehouseUuid). Requires {{warehouseUuid}} and {{productId}} to be real fixtures (manual fixture gaps, see collection description). Saves {{movementUuid}}. STM-001 note: this also atomically increases the real Stock on-hand quantity for this Warehouse/Product pair \u2014 not verified by this collection (see the documented scope limitation in the collection description)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"movementUuid\", json.data.uuid);",
+                  "",
+                  "pm.test(\"Response exposes only business fields (never id/tenantId/createdBy/updatedBy/deletedAt), and no updatedAt at all (immutable)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "    pm.expect(json.data.updatedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test(\"RECEIPT shape: destinationWarehouseUuid set, sourceWarehouseUuid null\", function () {",
+                  "    pm.expect(json.data.destinationWarehouseUuid).to.eql(pm.collectionVariables.get(\"warehouseUuid\"));",
+                  "    pm.expect(json.data.sourceWarehouseUuid).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Movement - ISSUE - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"sourceWarehouseUuid\": \"{{warehouseUuid}}\",\n  \"movementType\": \"ISSUE\",\n  \"quantity\": \"5.0000\",\n  \"referenceType\": \"SALES_ORDER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "STM-003: ISSUE requires sourceWarehouseUuid only (no destinationWarehouseUuid)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"ISSUE shape: sourceWarehouseUuid set, destinationWarehouseUuid null\", function () {",
+                  "    pm.expect(json.data.sourceWarehouseUuid).to.eql(pm.collectionVariables.get(\"warehouseUuid\"));",
+                  "    pm.expect(json.data.destinationWarehouseUuid).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Movement - TRANSFER - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"sourceWarehouseUuid\": \"{{warehouseUuid}}\",\n  \"destinationWarehouseUuid\": \"{{otherWarehouseUuid}}\",\n  \"movementType\": \"TRANSFER\",\n  \"quantity\": \"3.0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "STM-003: TRANSFER requires BOTH sourceWarehouseUuid and destinationWarehouseUuid on one row. Requires {{otherWarehouseUuid}} to be a second, distinct real Warehouse uuid (manual fixture, see collection description)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"TRANSFER shape: both source and destination set\", function () {",
+                  "    pm.expect(json.data.sourceWarehouseUuid).to.eql(pm.collectionVariables.get(\"warehouseUuid\"));",
+                  "    pm.expect(json.data.destinationWarehouseUuid).to.eql(pm.collectionVariables.get(\"otherWarehouseUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Movement - ADJUSTMENT - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productId\": \"{{productId}}\",\n  \"movementType\": \"ADJUSTMENT\",\n  \"quantity\": \"1.0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "STM-003: ADJUSTMENT requires neither sourceWarehouseUuid nor destinationWarehouseUuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"ADJUSTMENT shape: both source and destination null\", function () {",
+                  "    pm.expect(json.data.sourceWarehouseUuid).to.eql(null);",
+                  "    pm.expect(json.data.destinationWarehouseUuid).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Stock Movement - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements",
+                "not-a-uuid"
+              ]
+            },
+            "description": "movementUuid path param fails the .uuid() schema rule."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Stock Movement - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_STOCK_MOVEMENT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_STOCK_MOVEMENT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Stock Movement - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements/{{movementUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements",
+                "{{movementUuid}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the created Stock Movement (the RECEIPT saved above)\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"movementUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Stock Movements - Validation Error (Missing Required warehouseUuid Query Param)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ]
+            },
+            "description": "warehouseUuid is a required query filter (list-stock-movements-by-warehouse-query.dto.ts) \u2014 omitting it entirely is a 422 VALIDATION_ERROR."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Stock Movements - Success (Matches Warehouse As Either Source Or Destination)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/stock-movements?warehouseUuid={{warehouseUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "stock-movements"
+              ],
+              "query": [
+                {
+                  "key": "warehouseUuid",
+                  "value": "{{warehouseUuid}}"
+                }
+              ]
+            },
+            "description": "Ch.39.10/STM-003: warehouseUuid matches either sourceWarehouseUuid OR destinationWarehouseUuid on a row \u2014 the RECEIPT (destination only), ISSUE (source only), and TRANSFER (both) requests above should all appear."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array including the created Stock Movement\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    const uuids = json.data.map((m) => m.uuid);",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"movementUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

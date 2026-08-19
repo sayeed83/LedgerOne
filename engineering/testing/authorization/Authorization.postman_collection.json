@@ -1,0 +1,1831 @@
+{
+  "info": {
+    "_postman_id": "7f1e2d3c-4b5a-4c6d-8e9f-0a1b2c3d4e5f",
+    "name": "LedgerOne - Authorization",
+    "description": "Authorization module (Role, Permission, Role<->Permission, User<->Role) API collection (Create, Get, Update, Retire, List Role; List Permission; Assign, Remove, List Role Permissions; Assign, Remove, List User Roles). Reflects the implementation exactly as shipped in apps/api/src/shared/authorization, mounted at /api/v1/authorization (module-registry.ts).\n\nDesign note (JWT required, but no X-Tenant-Id validation path for Permission): Permission is platform-owned reference data (06_DATABASE_STANDARDS.md MT-005, list-permissions.controller.ts's own comment) so GET /permissions declares no X-Tenant-Id requirement -- but every /api/v1/authorization/* route, Permission included, still sits behind jwt-auth.middleware.ts (verified: a Permission request with no Authorization header still 401s with AUTH_MISSING_TOKEN). Every other route in this module (Role, Role Permissions, User Roles) requires X-Tenant-Id like every other tenant-owned module.\n\nKNOWN GAP #1 -- Permission has no seed data and no create endpoint at all: apps/api/src/database/seeds has no permissions.seed.ts anywhere in the repo, and this module exposes no HTTP route to create a Permission either (index.ts mounts only GET /permissions -- no POST). This means GET /permissions returns an empty array on a fresh local dev DB, and the entire 'Role Permissions' folder's success/duplicate-grant test cases CANNOT pass unless at least one row already exists in the permissions table, inserted directly outside this collection (SQL or Prisma Studio -- there is no HTTP way to create one). An illustrative (NOT executed) example insert shape:\n  INSERT INTO permissions (id, uuid, permission_key, module_name, resource, action, description, created_at, updated_at)\n  VALUES (1, UUID(), 'authorization.role.view', 'authorization', 'role', 'VIEW', 'View Roles', NOW(), NOW());\nSee the {{permissionKey}} collection variable (defaults to an empty string) -- fill it in manually with a real permission_key from your local dev DB before running the 'Role Permissions' folder's success/duplicate cases. Without it, those two requests will observe the real (and equally valid) 404 AUTHZ_PERMISSION_NOT_FOUND gap behavior instead, which the requests' own test scripts detect and report on explicitly rather than failing silently.\n\nKNOWN GAP #2 -- User<->Role needs a real User this module doesn't own: Authorization does not own User (FK-002, a cross-module reference to User Management's users.uuid, mirrored from assign-role.service.ts's own comment). The 'User Roles' folder's requests use a {{userUuid}} collection variable (defaults to an empty string) that must be filled in manually with a real User's uuid from your own local dev DB (e.g. one created via the User Management module, or the dev seed's fixture user in apps/api/src/database/seeds/development/users.seed.ts) before running that folder -- mirroring how Currency's own collection documents manual-fixture requirements the API itself cannot satisfy.\n\nDesign note (repeatable Role-name generation): Role.name is unique per tenant (00_BUSINESS_RULES.md Ch.11.8/AUTHZ_DUPLICATE_ROLE_NAME) and there is no delete endpoint for Role at all (only the one-way Active -> Retired lifecycle transition), so repeated Newman runs cannot rely on a prior run's rows being gone. A collection-level pre-request script derives two distinct Role names from Date.now() (mirroring Currency.postman_collection.json's own Date.now()-based generation trick, adapted for a name field instead of a 3-letter ISO code) once per Newman invocation, making cross-run collisions practically impossible without needing manual cleanup between runs. Test data (Roles created by this collection) has no HTTP delete path to clean up via the API itself; if a permanent record is undesired, delete the rows directly via SQL after a verification pass.\n\nRun order for a full pass, top to bottom: every Role request before the Role Permissions and User Roles folders ({{roleUuid}}/{{secondRoleUuid}} must both be set, by 'Create Role - Success' and 'Create Second Role - Success', before either folder runs); the 'User Roles' folder's 'Assign Role to User - Rejects Retired Role (Not Assignable)' case depends on the Role folder's 'Retire Role - Success' request having already retired {{secondRoleUuid}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "900001",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    {
+      "key": "qaRoleName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "qaSecondRoleName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "roleUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "secondRoleUuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "permissionKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userUuid",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request) so every",
+          "// request in this run shares the same two fixture Role names, while",
+          "// two separate runs land on different names and never collide on the",
+          "// Roles.name-unique-per-tenant constraint (00_BUSINESS_RULES.md",
+          "// Ch.11.8) -- Role has no delete endpoint, so a prior run's rows",
+          "// always persist.",
+          "if (!pm.collectionVariables.get(\"qaRoleName\")) {",
+          "    const now = Date.now();",
+          "    pm.collectionVariables.set(\"qaRoleName\", \"QA Role \" + now);",
+          "    pm.collectionVariables.set(\"qaSecondRoleName\", \"QA Role \" + (now + 1));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        // 204 No Content responses (the DELETE endpoints in this",
+          "        // module) have no body/Content-Type at all -- expected and",
+          "        // intentional, checked instead by each such request's own",
+          "        // 'Status code is 204' test.",
+          "        return;",
+          "    }",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Role",
+      "item": [
+        {
+          "name": "Create Role - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Unauthorized Test Role\",\n  \"description\": \"Should never be created\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "No Authorization header at all -- fails jwt-auth.middleware.ts before this module's own request validation ever runs (create-role.controller.ts)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Role - Validation Error (Missing Required Fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Body omits name entirely\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Body omits name entirely -- fails create-role.dto.ts's required-field schema (name is required, min length 1)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Role - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{qaRoleName}}\",\n  \"description\": \"Primary QA Role created by Postman collection\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Defines the primary Role used throughout this collection (00_BUSINESS_RULES.md Ch.11.1). {{qaRoleName}} is generated once per Newman invocation (collection-level pre-request script) so repeated runs never collide on the name-unique-per-tenant constraint. isSystemRole is always false via this endpoint (create-role.dto.ts's own comment -- not a client-settable flag). Saves {{roleUuid}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"roleUuid\", json.data.uuid);",
+                  "",
+                  "pm.test(\"Response exposes only business fields (never id/tenantId/createdBy/updatedBy/deletedAt)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test(\"isSystemRole is false and status defaults to ACTIVE\", function () {",
+                  "    pm.expect(json.data.isSystemRole).to.eql(false);",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Role - Duplicate Name",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{qaRoleName}}\",\n  \"description\": \"Duplicate attempt\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Reuses {{qaRoleName}}, already registered by the previous request -- rejected by create-role.service.ts before any row is written."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_DUPLICATE_ROLE_NAME\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_DUPLICATE_ROLE_NAME\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Role - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "not-a-uuid"]
+            },
+            "description": "roleUuid path param fails the .uuid() schema rule (role-uuid.schema.ts)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Role - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_ROLE_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_ROLE_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Role - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the primary Role\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"roleUuid\"));",
+                  "    pm.expect(json.data.name).to.eql(pm.collectionVariables.get(\"qaRoleName\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Role - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "00000000-0000-0000-0000-000000000000"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nope\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_ROLE_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_ROLE_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Role - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Primary QA Role (revised description)\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Revises description only; status is never changed here -- update-role.dto.ts's own comment: status changes go through the dedicated retire endpoint."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Description was revised, name is unchanged\", function () {",
+                  "    pm.expect(json.data.description).to.eql(\"Primary QA Role (revised description)\");",
+                  "    pm.expect(json.data.name).to.eql(pm.collectionVariables.get(\"qaRoleName\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Roles - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles"]
+            },
+            "description": "No query filters exposed by this endpoint (index.ts: GET /roles)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array containing the created Role\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    const uuids = json.data.map((r) => r.uuid);",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"roleUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Second Role - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{qaSecondRoleName}}\",\n  \"description\": \"Second QA Role -- will be retired below and used for the Role-Not-Assignable test in the User Roles folder\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Will be retired below (00_BUSINESS_RULES.md Ch.11.5) and used as the retired Role for the User Roles folder's 403 AUTHZ_ROLE_NOT_ASSIGNABLE test. Saves {{secondRoleUuid}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"secondRoleUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retire Role - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{secondRoleUuid}}/retire",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{secondRoleUuid}}", "retire"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.11.5: Active -> Retired. Left Retired deliberately so the User Roles folder's 'assign a Retired Role' rejection test below has a real fixture to reference; no reactivation endpoint exists (retiring is a one-way transition per this module's lifecycle, unlike Currency's Active<->Inactive toggle)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Status is RETIRED\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"RETIRED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retire Role - Rejects Already-Retired (Invalid Transition)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{secondRoleUuid}}/retire",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{secondRoleUuid}}", "retire"]
+            },
+            "description": "00_BUSINESS_RULES.md Ch.11.5 lifecycle: Retired -> Retired is not a legal transition."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_INVALID_ROLE_STATUS_TRANSITION\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_INVALID_ROLE_STATUS_TRANSITION\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Permission",
+      "item": [
+        {
+          "name": "List Permissions - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "permissions"]
+            },
+            "description": "No Authorization header at all -- Permission is platform-owned reference data (no X-Tenant-Id needed) but the route still sits behind jwt-auth.middleware.ts (list-permissions.controller.ts's own comment)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Permissions - Success (No Filter)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "permissions"]
+            },
+            "description": "Deliberately no X-Tenant-Id header -- Permission is platform-owned, not tenant-scoped. KNOWN GAP: with no permissions.seed.ts anywhere in the repo and no create endpoint, this returns an EMPTY array on a fresh local dev DB unless rows were inserted manually (see this collection's top-level description). This test tolerates either outcome and reports which one it observed rather than assuming seed data exists."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "});",
+                  "",
+                  "if (json.data.length === 0) {",
+                  "    console.warn(\"GAP CONFIRMED: permissions table is empty -- no permissions.seed.ts exists and no create endpoint exists (see collection description).\");",
+                  "} else {",
+                  "    pm.test(\"Each Permission row exposes only its business fields\", function () {",
+                  "        const first = json.data[0];",
+                  "        pm.expect(first.uuid).to.be.a(\"string\");",
+                  "        pm.expect(first.permissionKey).to.be.a(\"string\");",
+                  "        pm.expect(first.id).to.be.undefined;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Permissions - Filtered By moduleName",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/permissions?moduleName=authorization",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "permissions"],
+              "query": [
+                {
+                  "key": "moduleName",
+                  "value": "authorization"
+                }
+              ]
+            },
+            "description": "list-permissions-query.dto.ts's optional moduleName filter (PRM-001). Same KNOWN GAP as the unfiltered list -- may return an empty array."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Every returned Permission belongs to the requested module\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    json.data.forEach((p) => pm.expect(p.moduleName).to.eql(\"authorization\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Role Permissions",
+      "item": [
+        {
+          "name": "List Role Permissions - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}", "permissions"]
+            },
+            "description": "Lists Permissions currently granted to the primary Role -- expected empty at this point in the run (no grant has been made yet)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Permission to Role - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}", "permissions"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissionKey\": \"authorization.role.view\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "No Authorization header -- fails jwt-auth.middleware.ts before this module's own request validation ever runs."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Permission to Role - Validation Error (Missing permissionKey)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}", "permissions"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Body omits permissionKey entirely -- fails assign-permission.dto.ts's required-field schema."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Permission to Role - Role Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/00000000-0000-0000-0000-000000000000/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "00000000-0000-0000-0000-000000000000", "permissions"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissionKey\": \"authorization.role.view\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A well-formed but non-existent roleUuid -- assign-permission.service.ts resolves the Role before the Permission, so this 404s as AUTHZ_ROLE_NOT_FOUND regardless of whether the permissionKey exists."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_ROLE_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_ROLE_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Permission to Role - Permission Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}", "permissions"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissionKey\": \"nonexistent.module.action\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A well-formed but non-existent permissionKey -- rejected by assign-permission.service.ts's findPermissionByKey lookup. This is the SAME 404 that the 'Assign Permission to Role - Success' request below will also observe if {{permissionKey}} has not been manually filled in (KNOWN GAP #1, see collection description) -- so this request doubles as a real, always-passable regression test for that lookup regardless of whether the seed gap has been worked around."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_PERMISSION_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_PERMISSION_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Permission to Role - Success (requires manual {{permissionKey}})",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}", "permissions"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissionKey\": \"{{permissionKey}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "KNOWN GAP #1 (see collection top-level description): there is no permissions.seed.ts anywhere in the repo and no HTTP create endpoint for Permission, so this request can only succeed against a local dev DB that already has a real permission_key row inserted directly, e.g. (illustrative example only, NOT executed by this collection):\n  INSERT INTO permissions (id, uuid, permission_key, module_name, resource, action, description, created_at, updated_at)\n  VALUES (1, UUID(), 'authorization.role.view', 'authorization', 'role', 'VIEW', 'View Roles', NOW(), NOW());\nFill {{permissionKey}} in with that row's permission_key before running this request. If {{permissionKey}} is left as the default empty string, this test detects that and reports the gap instead of failing opaquely."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"permissionKey\")) {",
+                  "    console.warn(\"SKIPPED: {{permissionKey}} collection variable is empty -- fill it in manually with a real permission_key from your local dev DB (see this request's own description and KNOWN GAP #1 in the collection description) before this request can be expected to succeed.\");",
+                  "    pm.test(\"permissionKey not supplied -- observes AUTHZ_PERMISSION_NOT_FOUND (documented gap, not a failure of this collection)\", function () {",
+                  "        pm.response.to.have.status(404);",
+                  "        pm.expect(pm.response.json().error.code).to.eql(\"AUTHZ_PERMISSION_NOT_FOUND\");",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Status code is 201\", function () {",
+                  "        pm.response.to.have.status(201);",
+                  "    });",
+                  "",
+                  "    const json = pm.response.json();",
+                  "",
+                  "    pm.test(\"Response links the Role and Permission\", function () {",
+                  "        pm.expect(json.data.roleUuid).to.eql(pm.collectionVariables.get(\"roleUuid\"));",
+                  "        pm.expect(json.data.permissionKey).to.eql(pm.collectionVariables.get(\"permissionKey\"));",
+                  "    });",
+                  "",
+                  "    pm.test(\"Response exposes only business fields (never id/roleId/permissionId)\", function () {",
+                  "        pm.expect(json.data.id).to.be.undefined;",
+                  "        pm.expect(json.data.roleId).to.be.undefined;",
+                  "        pm.expect(json.data.permissionId).to.be.undefined;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Permission to Role - Duplicate Grant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}", "permissions"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissionKey\": \"{{permissionKey}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Repeats the grant from the previous request -- only meaningful once {{permissionKey}} has been manually filled in (KNOWN GAP #1). Without it, this repeats the same AUTHZ_PERMISSION_NOT_FOUND lookup failure rather than exercising the duplicate-grant check in assign-permission.service.ts."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"permissionKey\")) {",
+                  "    console.warn(\"SKIPPED: {{permissionKey}} collection variable is empty -- see KNOWN GAP #1 in the collection description.\");",
+                  "    pm.test(\"permissionKey not supplied -- observes AUTHZ_PERMISSION_NOT_FOUND (documented gap, not a failure of this collection)\", function () {",
+                  "        pm.response.to.have.status(404);",
+                  "        pm.expect(pm.response.json().error.code).to.eql(\"AUTHZ_PERMISSION_NOT_FOUND\");",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Status code is 409\", function () {",
+                  "        pm.response.to.have.status(409);",
+                  "    });",
+                  "",
+                  "    const json = pm.response.json();",
+                  "",
+                  "    pm.test(\"Error code is AUTHZ_DUPLICATE_PERMISSION_ASSIGNMENT\", function () {",
+                  "        pm.expect(json.error.code).to.eql(\"AUTHZ_DUPLICATE_PERMISSION_ASSIGNMENT\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove Permission from Role - Not Found",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}/permissions/nonexistent.module.action",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}", "permissions", "nonexistent.module.action"]
+            },
+            "description": "A permissionKey never granted to this Role -- 404 AUTHZ_ROLE_PERMISSION_NOT_FOUND (remove-permission.controller.ts)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_ROLE_PERMISSION_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_ROLE_PERMISSION_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove Permission from Role - Success (requires manual {{permissionKey}})",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/roles/{{roleUuid}}/permissions/{{permissionKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "roles", "{{roleUuid}}", "permissions", "{{permissionKey}}"]
+            },
+            "description": "204 No Content per response-envelope.ts's sendNoContent -- this module is the first to expose a removal endpoint. Only meaningful once {{permissionKey}} has been manually filled in and actually granted by the 'Assign Permission to Role - Success' request above (KNOWN GAP #1). Without it, this repeats an AUTHZ_ROLE_PERMISSION_NOT_FOUND 404 instead."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"permissionKey\")) {",
+                  "    console.warn(\"SKIPPED: {{permissionKey}} collection variable is empty -- see KNOWN GAP #1 in the collection description.\");",
+                  "    pm.test(\"permissionKey not supplied -- observes AUTHZ_ROLE_PERMISSION_NOT_FOUND (documented gap, not a failure of this collection)\", function () {",
+                  "        pm.response.to.have.status(404);",
+                  "        pm.expect(pm.response.json().error.code).to.eql(\"AUTHZ_ROLE_PERMISSION_NOT_FOUND\");",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Status code is 204 (No Content, empty body)\", function () {",
+                  "        pm.response.to.have.status(204);",
+                  "        pm.expect(pm.response.text()).to.eql(\"\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "User Roles",
+      "item": [
+        {
+          "name": "List User Roles - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles"]
+            },
+            "description": "No Authorization header -- fails jwt-auth.middleware.ts before this module's own request validation ever runs."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List User Roles - Success (requires manual {{userUuid}})",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles"]
+            },
+            "description": "KNOWN GAP #2 (see collection top-level description): Authorization does not own User (FK-002, cross-module reference to User Management's users.uuid). {{userUuid}} defaults to an empty string and must be manually filled in with a real User uuid from your local dev DB (e.g. via User Management, or apps/api/src/database/seeds/development/users.seed.ts's fixture user) before this returns a meaningful result. list-user-roles.service.ts trusts userUuid as given -- an empty string will still validate as a syntactically malformed uuid and 422 rather than 200."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"userUuid\")) {",
+                  "    console.warn(\"SKIPPED: {{userUuid}} collection variable is empty -- see KNOWN GAP #2 in the collection description.\");",
+                  "    pm.test(\"userUuid not supplied -- observes VALIDATION_ERROR (empty string fails the .uuid() schema)\", function () {",
+                  "        pm.response.to.have.status(422);",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Status code is 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    const json = pm.response.json();",
+                  "",
+                  "    pm.test(\"Response data is an array\", function () {",
+                  "        pm.expect(json.data).to.be.an(\"array\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Role to User - Validation Error (Missing roleUuid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Body omits roleUuid entirely -- fails assign-role.dto.ts's required-field schema. This validation runs on the body before userUuid's own path-param validity matters, so this 422s regardless of whether {{userUuid}} has been filled in."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Role to User - Role Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleUuid\": \"00000000-0000-0000-0000-000000000000\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A well-formed but non-existent roleUuid -- assign-role.service.ts resolves the Role first, so this 404s as AUTHZ_ROLE_NOT_FOUND independent of {{userUuid}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_ROLE_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_ROLE_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Role to User - Rejects Retired Role (Not Assignable)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleUuid\": \"{{secondRoleUuid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "{{secondRoleUuid}} was retired in the Role folder above (00_BUSINESS_RULES.md Ch.11.5: retiring makes a Role 'no longer assignable to new Users'). This 403s as AUTHZ_ROLE_NOT_ASSIGNABLE (assign-role.service.ts checks role.status !== Active) BEFORE this module ever needs to resolve {{userUuid}} against User Management, so this test is meaningful regardless of KNOWN GAP #2."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTHZ_ROLE_NOT_ASSIGNABLE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTHZ_ROLE_NOT_ASSIGNABLE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Role to User - Success (requires manual {{userUuid}})",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleUuid\": \"{{roleUuid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "KNOWN GAP #2 (see collection top-level description): only meaningful once {{userUuid}} has been manually filled in with a real User uuid from your local dev DB. Without it, {{userUuid}} resolves to an empty string, which fails userUuidParamSchema's .uuid() rule and 422s instead of assigning the Role."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"userUuid\")) {",
+                  "    console.warn(\"SKIPPED: {{userUuid}} collection variable is empty -- see KNOWN GAP #2 in the collection description.\");",
+                  "    pm.test(\"userUuid not supplied -- observes VALIDATION_ERROR (empty string fails the .uuid() schema)\", function () {",
+                  "        pm.response.to.have.status(422);",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Status code is 201\", function () {",
+                  "        pm.response.to.have.status(201);",
+                  "    });",
+                  "",
+                  "    const json = pm.response.json();",
+                  "",
+                  "    pm.test(\"Response links the User and Role\", function () {",
+                  "        pm.expect(json.data.userUuid).to.eql(pm.collectionVariables.get(\"userUuid\"));",
+                  "        pm.expect(json.data.roleUuid).to.eql(pm.collectionVariables.get(\"roleUuid\"));",
+                  "    });",
+                  "",
+                  "    pm.test(\"Response exposes only business fields (never id/userId/roleId)\", function () {",
+                  "        pm.expect(json.data.id).to.be.undefined;",
+                  "        pm.expect(json.data.userId).to.be.undefined;",
+                  "        pm.expect(json.data.roleId).to.be.undefined;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Role to User - Duplicate Assignment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleUuid\": \"{{roleUuid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Repeats the previous request's assignment -- only meaningful once {{userUuid}} has been manually filled in (KNOWN GAP #2). Without it, this repeats the same VALIDATION_ERROR rather than exercising assign-role.service.ts's duplicate-assignment check."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"userUuid\")) {",
+                  "    console.warn(\"SKIPPED: {{userUuid}} collection variable is empty -- see KNOWN GAP #2 in the collection description.\");",
+                  "    pm.test(\"userUuid not supplied -- observes VALIDATION_ERROR (empty string fails the .uuid() schema)\", function () {",
+                  "        pm.response.to.have.status(422);",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Status code is 409\", function () {",
+                  "        pm.response.to.have.status(409);",
+                  "    });",
+                  "",
+                  "    const json = pm.response.json();",
+                  "",
+                  "    pm.test(\"Error code is AUTHZ_DUPLICATE_ROLE_ASSIGNMENT\", function () {",
+                  "        pm.expect(json.error.code).to.eql(\"AUTHZ_DUPLICATE_ROLE_ASSIGNMENT\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove Role from User - Not Found",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "A roleUuid never assigned to this User -- 404 AUTHZ_USER_ROLE_NOT_FOUND (remove-role.controller.ts). Meaningful with or without {{userUuid}} manually filled in, since the assignment lookup itself is what's exercised, not the User's own existence."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"userUuid\")) {",
+                  "    console.warn(\"SKIPPED: {{userUuid}} collection variable is empty -- see KNOWN GAP #2 in the collection description.\");",
+                  "    pm.test(\"userUuid not supplied -- observes VALIDATION_ERROR (empty string fails the .uuid() schema)\", function () {",
+                  "        pm.response.to.have.status(422);",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Status code is 404\", function () {",
+                  "        pm.response.to.have.status(404);",
+                  "    });",
+                  "",
+                  "    const json = pm.response.json();",
+                  "",
+                  "    pm.test(\"Error code is AUTHZ_USER_ROLE_NOT_FOUND\", function () {",
+                  "        pm.expect(json.error.code).to.eql(\"AUTHZ_USER_ROLE_NOT_FOUND\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove Role from User - Success (requires manual {{userUuid}})",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/authorization/users/{{userUuid}}/roles/{{roleUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "authorization", "users", "{{userUuid}}", "roles", "{{roleUuid}}"]
+            },
+            "description": "204 No Content per response-envelope.ts's sendNoContent. Only meaningful once {{userUuid}} has been manually filled in and the 'Assign Role to User - Success' request above actually created the assignment (KNOWN GAP #2). Without it, this repeats a VALIDATION_ERROR instead."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"userUuid\")) {",
+                  "    console.warn(\"SKIPPED: {{userUuid}} collection variable is empty -- see KNOWN GAP #2 in the collection description.\");",
+                  "    pm.test(\"userUuid not supplied -- observes VALIDATION_ERROR (empty string fails the .uuid() schema)\", function () {",
+                  "        pm.response.to.have.status(422);",
+                  "    });",
+                  "} else {",
+                  "    pm.test(\"Status code is 204 (No Content, empty body)\", function () {",
+                  "        pm.response.to.have.status(204);",
+                  "        pm.expect(pm.response.text()).to.eql(\"\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

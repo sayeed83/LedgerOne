@@ -1,0 +1,782 @@
+{
+  "info": {
+    "_postman_id": "3c4d5e6f-7a8b-4c9d-0e1f-2a3b4c5d6e7f",
+    "name": "LedgerOne - Inventory (Product)",
+    "description": "Inventory module (Product) API collection (Create, Get, Update, List by Company). Reflects the implementation exactly as shipped in apps/api/src/shared/inventory.\n\nDesign note (tenant-owned, X-Tenant-Id always required; header rewrite): identical posture to ProductCategory.postman_collection.json/Unit.postman_collection.json — every /api/v1/inventory/* route sits behind jwt-auth.middleware.ts AND current-tenant.middleware.ts mounted with `{ rewriteHeaderAs: \"decimal\" }` (module-registry.ts), which overwrites `x-tenant-id` in place with the verified JWT claim before this module's own tenantIdHeaderSchema ever inspects it — so a missing/malformed X-Tenant-Id does not itself fail validation here either. No dedicated 'missing/malformed X-Tenant-Id' failure case is included for the same reason.\n\nDesign note (productCategoryUuid is REQUIRED, PCT-001): unlike Unit's optional baseUnitUuid, a Product's productCategoryUuid is required at creation — there is no way to create a valid Product without a real Product Category to reference. This collection therefore includes its own small 'Setup' folder that creates one Product Category (mirroring ProductCategory.postman_collection.json's own Create-Success request pattern) purely as a fixture for the Product folder below, self-contained rather than chaining to the sibling collection.\n\nDesign note (response omits productCategoryUuid/unitUuid, a documented Handbook Deviation, not a bug): product.response.dto.ts deliberately omits both cross-references entirely (an extra Repository lookup per row this milestone's controllers may not make, the same carried-forward reasoning as Unit's/Product Category's own omissions) — not tested for presence or absence beyond the PK-003 internal-field checks.\n\nDesign note (status/isStocked have no transition validation this milestone): create-product.dto.ts/update-product.dto.ts accept `status`/`isStocked` as plain shape-only-validated fields — PRD-003 ('cannot be Discontinued while it has non-zero Stock') and Ch.34.12 ('Stocked classification is fixed once transacted') are both deferred (no Stock/transaction data exists yet to evaluate them against, per create-product.service.ts's own header comment). This collection therefore includes no status-transition-rejection test for Product, a deliberate reflection of that documented gap.\n\nThere is no delete endpoint for Product, so a collection-level pre-request script derives a `{{productSuffix}}` from the current timestamp (once per Newman invocation) appended to every created productCode/name, avoiding cross-run collisions on PRD-001's per-Company productCode uniqueness.\n\nRun order for a full pass, top to bottom: the Setup folder's Product Category and Unit fixtures must run before the Product folder (every Create Product request references {{productCategoryUuid}}/{{unitUuid}}).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" },
+    { "key": "tenantId", "value": "900001", "type": "string" },
+    { "key": "companyUuid", "value": "11111111-1111-1111-1111-111111111111", "type": "string" },
+    {
+      "key": "accessToken",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0ZW5hbnRJZCI6IjkwMDAwMSIsInBsYW5lIjoidGVuYW50IiwianRpIjoiYWNjb3VudGluZy1wb3N0bWFuLWRldi1vbmx5IiwiaWF0IjoxNzg1ODU1OTU4LCJleHAiOjIxMDEyMTU5NTh9.sF441ULNxyKfCHsgKD4M1RqMhJARIzVgTbtYiV1cY2y0lBXNMlpHr5FpftMzp-AhP4kl0xZxSQM2ejwytlD0gFnYYcyO-tM3GV91NvvD-gkAp11w1CG5QcSPhelynMBt_KbMJBiPmylz_V1N8u-G9-pg1c3U8U7schoZdDqisCO0TmSDv6HUy1tVvkPLEEYOcKrsagRjQlcnk-fmsbcV84etM3_Q0i-rWvewlfOboK7KaC70OFKT6UA05IzjU8KM5UcVWWthqxwSs69m0Uc6c-QeWYsd2e0Fk4PL9tz_zVO55-eP8V50VJuGwZ-kBRbv8rzSaX-pilSq7eAlhmurBA",
+      "type": "string"
+    },
+    { "key": "productSuffix", "value": "", "type": "string" },
+    { "key": "productCategoryUuid", "value": "", "type": "string" },
+    { "key": "unitUuid", "value": "", "type": "string" },
+    { "key": "productUuid", "value": "", "type": "string" },
+    { "key": "productCode", "value": "", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Computed once per Newman invocation (not per request) so every",
+          "// request in this run shares the same fixture suffix, while two",
+          "// separate runs never collide on PRD-001's per-Company productCode",
+          "// uniqueness rule (no delete endpoint exists to clean up between runs).",
+          "if (!pm.collectionVariables.get(\"productSuffix\")) {",
+          "    pm.collectionVariables.set(\"productSuffix\", String(Date.now()));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response Content-Type is application/json\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    pm.response.to.have.header(\"Content-Type\");",
+          "});",
+          "",
+          "pm.test(\"Response is either a {data} or {error} envelope, never both\", function () {",
+          "    const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "    if (!contentType.includes(\"application/json\")) {",
+          "        return;",
+          "    }",
+          "    const json = pm.response.json();",
+          "    const hasData = Object.prototype.hasOwnProperty.call(json, \"data\");",
+          "    const hasError = Object.prototype.hasOwnProperty.call(json, \"error\");",
+          "    pm.expect(hasData !== hasError).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "description": "Fixture Product Category and Unit this collection needs — a Product's own productCategoryUuid is required (PCT-001), so a valid one must exist first. Self-contained rather than chaining to ProductCategory.postman_collection.json/Unit.postman_collection.json, mirroring Product.postman_collection.json's own precedent of not chaining across sibling Accounting collections.",
+      "item": [
+        {
+          "name": "Create Fixture Product Category - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/product-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "product-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"LiveTest Product Fixture Category {{productSuffix}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Saves {{productCategoryUuid}} — the required Product Category every Create Product request below references."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"productCategoryUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Fixture Unit - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/units",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "units"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"name\": \"LiveTest Product Fixture Unit {{productSuffix}}\",\n  \"symbol\": \"pf{{productSuffix}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Saves {{unitUuid}} — the optional Unit of Measure some Create/Update Product requests below reference."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"unitUuid\", json.data.uuid);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Product",
+      "description": "`/api/v1/inventory/products` — Ch.34.",
+      "item": [
+        {
+          "name": "Create Product - Unauthorized (Missing Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productCode\": \"SHOULD-NOT-EXIST\",\n  \"name\": \"Should Not Be Created\",\n  \"productCategoryUuid\": \"{{productCategoryUuid}}\",\n  \"isStocked\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "No Authorization header at all — jwt-auth.middleware.ts rejects before current-tenant.middleware.ts or this module's own validation ever run."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is AUTH_MISSING_TOKEN\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"AUTH_MISSING_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product - Validation Error (Missing Required Fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Body omits companyUuid/productCode/name/productCategoryUuid/isStocked entirely — fails create-product.dto.ts's required-field schema."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product - Product Category Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productCode\": \"LT-ORPHAN-{{productSuffix}}\",\n  \"name\": \"LiveTest Orphan Product {{productSuffix}}\",\n  \"productCategoryUuid\": \"00000000-0000-0000-0000-000000000000\",\n  \"isStocked\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A well-formed but non-existent productCategoryUuid — resolved first, before any row is written (PCT-001/PK-003)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_PRODUCT_CATEGORY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_PRODUCT_CATEGORY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product - Unit Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productCode\": \"LT-NOUNIT-{{productSuffix}}\",\n  \"name\": \"LiveTest No Unit Product {{productSuffix}}\",\n  \"productCategoryUuid\": \"{{productCategoryUuid}}\",\n  \"unitUuid\": \"00000000-0000-0000-0000-000000000000\",\n  \"isStocked\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "productCategoryUuid resolves fine; a well-formed but non-existent unitUuid is resolved second and rejected before any row is written (Ch.34.8/PK-003)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_UNIT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_UNIT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Primary Product - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productCode\": \"LT-{{productSuffix}}\",\n  \"name\": \"LiveTest Primary Product {{productSuffix}}\",\n  \"description\": \"Created by Product.postman_collection.json\",\n  \"productCategoryUuid\": \"{{productCategoryUuid}}\",\n  \"unitUuid\": \"{{unitUuid}}\",\n  \"isStocked\": true,\n  \"status\": \"ACTIVE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Defines the primary Product used throughout this collection (00_BUSINESS_RULES.md Ch.34.1). Saves {{productUuid}}/{{productCode}}. productCategoryUuid/unitUuid are DELIBERATELY OMITTED from the response (documented gap, product.response.dto.ts) — not asserted here."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"productUuid\", json.data.uuid);",
+                  "pm.collectionVariables.set(\"productCode\", json.data.productCode);",
+                  "",
+                  "pm.test(\"Response exposes only business fields (never id/tenantId/createdBy/updatedBy/deletedAt)\", function () {",
+                  "    pm.expect(json.data.id).to.be.undefined;",
+                  "    pm.expect(json.data.tenantId).to.be.undefined;",
+                  "    pm.expect(json.data.createdBy).to.be.undefined;",
+                  "    pm.expect(json.data.updatedBy).to.be.undefined;",
+                  "    pm.expect(json.data.deletedAt).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test(\"status is ACTIVE, isStocked is true\", function () {",
+                  "    pm.expect(json.data.status).to.eql(\"ACTIVE\");",
+                  "    pm.expect(json.data.isStocked).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product - Duplicate Product Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyUuid\": \"{{companyUuid}}\",\n  \"productCode\": \"{{productCode}}\",\n  \"name\": \"Duplicate Attempt\",\n  \"productCategoryUuid\": \"{{productCategoryUuid}}\",\n  \"isStocked\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Reuses {{productCode}}, already registered by the previous request under the same Company (PRD-001) — rejected by create-product.service.ts before any row is written."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_DUPLICATE_PRODUCT_CODE\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_DUPLICATE_PRODUCT_CODE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product - Validation Error (Malformed Uuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products", "not-a-uuid"]
+            },
+            "description": "productUuid path param fails the .uuid() schema rule."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "A well-formed but non-existent uuid."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_PRODUCT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_PRODUCT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products/{{productUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products", "{{productUuid}}"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Returns the Primary Product\", function () {",
+                  "    pm.expect(json.data.uuid).to.eql(pm.collectionVariables.get(\"productUuid\"));",
+                  "    pm.expect(json.data.productCode).to.eql(pm.collectionVariables.get(\"productCode\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product - Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products", "00000000-0000-0000-0000-000000000000"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Irrelevant\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_PRODUCT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_PRODUCT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product - Product Category Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products/{{productUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products", "{{productUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productCategoryUuid\": \"00000000-0000-0000-0000-000000000000\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A well-formed but non-existent productCategoryUuid — resolved first, before any row is updated."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_PRODUCT_CATEGORY_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_PRODUCT_CATEGORY_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product - Unit Not Found",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products/{{productUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products", "{{productUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"unitUuid\": \"00000000-0000-0000-0000-000000000000\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A well-formed but non-existent unitUuid — resolved first, before any row is updated."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is INV_UNIT_NOT_FOUND\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"INV_UNIT_NOT_FOUND\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product - Success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products/{{productUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products", "{{productUuid}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"LiveTest Primary Product {{productSuffix}} (Revised)\",\n  \"description\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Revises name and explicitly clears description (null), leaving productCode/productCategoryUuid/unitUuid/isStocked/status untouched (omitted, not null)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Name was revised and description cleared\", function () {",
+                  "    pm.expect(json.data.name).to.eql(\"LiveTest Primary Product \" + pm.collectionVariables.get(\"productSuffix\") + \" (Revised)\");",
+                  "    pm.expect(json.data.description).to.eql(null);",
+                  "});",
+                  "",
+                  "pm.test(\"productCode is unchanged\", function () {",
+                  "    pm.expect(json.data.productCode).to.eql(pm.collectionVariables.get(\"productCode\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Products By Company - Success",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products?companyUuid={{companyUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products"],
+              "query": [{ "key": "companyUuid", "value": "{{companyUuid}}" }]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Response data is an array including the Primary Product\", function () {",
+                  "    pm.expect(json.data).to.be.an(\"array\");",
+                  "    const uuids = json.data.map((p) => p.uuid);",
+                  "    pm.expect(uuids).to.include(pm.collectionVariables.get(\"productUuid\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Products By Company - Validation Error (Missing companyUuid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "products"]
+            },
+            "description": "companyUuid is required, not an optional filter — list-products-by-company-query.dto.ts."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Error code is VALIDATION_ERROR\", function () {",
+                  "    pm.expect(json.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
