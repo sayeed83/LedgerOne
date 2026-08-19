@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Avatar,
   BellIcon,
+  ChevronLeftIcon,
   ChevronRightIcon,
   Dropdown,
   DropdownItem,
@@ -31,7 +32,22 @@ export function ErpShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { signOut } = useAuth();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  // Desktop-only icon rail toggle (LAY-001's mobile drawer is unaffected).
+  // Lazy-init reads localStorage on the client only — SSR always renders
+  // the expanded rail, then this settles to the user's stored preference
+  // on hydration.
+  const [isCollapsed, setIsCollapsed] = useState(
+    () => typeof window !== "undefined" && window.localStorage.getItem("erpShellCollapsed") === "1",
+  );
   const breadcrumbTrail = getBreadcrumbTrail(pathname ?? "/");
+
+  function toggleCollapsed() {
+    setIsCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("erpShellCollapsed", next ? "1" : "0");
+      return next;
+    });
+  }
 
   return (
     <div className="flex min-h-screen bg-surface text-ink">
@@ -44,13 +60,33 @@ export function ErpShell({ children }: { children: ReactNode }) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-surface-border bg-surface-card transition-transform lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col border-r border-surface-border bg-surface-card transition-[transform,width] lg:static lg:translate-x-0 ${
           isMobileNavOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        } ${isCollapsed ? "lg:w-20 w-64" : "w-64"}`}
       >
-        <div className="flex h-16 items-center gap-3 border-b border-surface-border px-5">
+        <div
+          className={`flex h-16 items-center gap-3 border-b border-surface-border px-5 ${
+            isCollapsed ? "lg:justify-center lg:px-3" : ""
+          }`}
+        >
           <LedgerOneMark className="h-8 w-8 shrink-0" />
-          <span className="text-base font-semibold tracking-tight text-ink">LedgerOne</span>
+          <div className={`min-w-0 ${isCollapsed ? "lg:hidden" : ""}`}>
+            <span className="block text-base font-semibold tracking-tight text-ink">LedgerOne</span>
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-warning-500">
+              Cloud ERP Platform
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className={`ml-auto hidden shrink-0 items-center justify-center rounded-lg border border-surface-border p-1 text-ink-muted transition-colors hover:border-surface-borderStrong hover:bg-white/[0.06] hover:text-ink lg:flex ${
+              isCollapsed ? "lg:ml-0" : ""
+            }`}
+            aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-pressed={isCollapsed}
+          >
+            <ChevronLeftIcon className={`h-4 w-4 transition-transform ${isCollapsed ? "rotate-180" : ""}`} />
+          </button>
           <button
             type="button"
             onClick={() => setIsMobileNavOpen(false)}
@@ -63,23 +99,29 @@ export function ErpShell({ children }: { children: ReactNode }) {
 
         <nav aria-label="Primary" className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-0.5">
-            {NAVIGATION_ITEMS.map((item) => {
+            {NAVIGATION_ITEMS.map((item, index) => {
               const isActive = pathname === item.href;
               const Icon = item.icon;
+              const previousGroup = index > 0 ? NAVIGATION_ITEMS[index - 1]!.group : undefined;
+              const showDivider = item.group !== undefined && item.group !== previousGroup;
               return (
                 <li key={item.href}>
+                  {showDivider && <div className="my-2 border-t border-surface-border" aria-hidden="true" />}
                   <Link
                     href={item.href}
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setIsMobileNavOpen(false)}
+                    title={isCollapsed ? item.label : undefined}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                      isCollapsed ? "lg:justify-center lg:px-0" : ""
+                    } ${
                       isActive
-                        ? "bg-primary-500/15 text-primary-400"
+                        ? "bg-primary-500 text-white"
                         : "text-ink-muted hover:bg-white/[0.06] hover:text-ink"
                     }`}
                   >
                     <Icon className="h-5 w-5 shrink-0" />
-                    {item.label}
+                    <span className={isCollapsed ? "lg:hidden" : ""}>{item.label}</span>
                   </Link>
                 </li>
               );

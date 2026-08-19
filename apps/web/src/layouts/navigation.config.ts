@@ -20,6 +20,11 @@ export interface NavItem {
   label: string;
   href: string;
   icon: (props: IconProps) => JSX.Element;
+  // Purely a rendering hint for ErpShell (a divider is drawn whenever this
+  // value changes between consecutive items) — getBreadcrumbTrail below
+  // ignores it entirely, so grouping items differently never touches
+  // breadcrumb behavior.
+  group?: string;
 }
 
 // LAY-002: the one central registry every nav/breadcrumb consumer reads
@@ -29,27 +34,27 @@ export interface NavItem {
 // `href` aligned to that module's `/api/v1/...` resource path.
 export const NAVIGATION_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/", icon: GridIcon },
-  { label: "Organization", href: "/organization", icon: BuildingIcon },
-  { label: "User Management", href: "/users", icon: UsersIcon },
-  { label: "Roles", href: "/authorization/roles", icon: KeyIcon },
-  { label: "Permissions", href: "/authorization/permissions", icon: ShieldCheckIcon },
-  { label: "Financial Year", href: "/accounting/financial-years", icon: CalendarIcon },
-  { label: "Currency", href: "/accounting/currencies", icon: CoinsIcon },
-  { label: "Exchange Rates", href: "/accounting/exchange-rates", icon: ArrowsRightLeftIcon },
-  { label: "Tax", href: "/accounting/tax", icon: PercentIcon },
-  { label: "Chart of Accounts", href: "/accounting/chart-of-accounts", icon: LayersIcon },
-  { label: "Journal Entries", href: "/accounting/journal-entries", icon: BookOpenIcon },
-  { label: "Ledger", href: "/accounting/ledger", icon: ListIcon },
-  { label: "Reports", href: "/accounting/reports", icon: BarChartIcon },
-  { label: "Product Categories", href: "/inventory/product-categories", icon: FilterIcon },
-  { label: "Units of Measure", href: "/inventory/units", icon: LayersIcon },
-  { label: "Products", href: "/inventory/products", icon: ListIcon },
-  { label: "Warehouses", href: "/inventory/warehouses", icon: BuildingIcon },
-  { label: "Stocks", href: "/inventory/stocks", icon: ListIcon },
-  { label: "Adjustments", href: "/inventory/adjustments", icon: ListIcon },
-  { label: "Stock Movements", href: "/inventory/stock-movements", icon: ArrowsRightLeftIcon },
-  { label: "Batches", href: "/inventory/batches", icon: CalendarIcon },
-  { label: "Reorder Levels", href: "/inventory/reorder-levels", icon: FilterIcon },
+  { label: "Organization", href: "/organization", icon: BuildingIcon, group: "Organization & Access" },
+  { label: "User Management", href: "/users", icon: UsersIcon, group: "Organization & Access" },
+  { label: "Roles", href: "/authorization/roles", icon: KeyIcon, group: "Organization & Access" },
+  { label: "Permissions", href: "/authorization/permissions", icon: ShieldCheckIcon, group: "Organization & Access" },
+  { label: "Financial Year", href: "/accounting/financial-years", icon: CalendarIcon, group: "Accounting" },
+  { label: "Currency", href: "/accounting/currencies", icon: CoinsIcon, group: "Accounting" },
+  { label: "Exchange Rates", href: "/accounting/exchange-rates", icon: ArrowsRightLeftIcon, group: "Accounting" },
+  { label: "Tax", href: "/accounting/tax", icon: PercentIcon, group: "Accounting" },
+  { label: "Chart of Accounts", href: "/accounting/chart-of-accounts", icon: LayersIcon, group: "Accounting" },
+  { label: "Journal Entries", href: "/accounting/journal-entries", icon: BookOpenIcon, group: "Accounting" },
+  { label: "Ledger", href: "/accounting/ledger", icon: ListIcon, group: "Accounting" },
+  { label: "Reports", href: "/accounting/reports", icon: BarChartIcon, group: "Accounting" },
+  { label: "Product Categories", href: "/inventory/product-categories", icon: FilterIcon, group: "Inventory" },
+  { label: "Units of Measure", href: "/inventory/units", icon: LayersIcon, group: "Inventory" },
+  { label: "Products", href: "/inventory/products", icon: ListIcon, group: "Inventory" },
+  { label: "Warehouses", href: "/inventory/warehouses", icon: BuildingIcon, group: "Inventory" },
+  { label: "Stocks", href: "/inventory/stocks", icon: ListIcon, group: "Inventory" },
+  { label: "Adjustments", href: "/inventory/adjustments", icon: ListIcon, group: "Inventory" },
+  { label: "Stock Movements", href: "/inventory/stock-movements", icon: ArrowsRightLeftIcon, group: "Inventory" },
+  { label: "Batches", href: "/inventory/batches", icon: CalendarIcon, group: "Inventory" },
+  { label: "Reorder Levels", href: "/inventory/reorder-levels", icon: FilterIcon, group: "Inventory" },
 ];
 
 export interface BreadcrumbItem {
