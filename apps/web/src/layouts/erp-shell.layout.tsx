@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Avatar,
   BellIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   Dropdown,
@@ -19,7 +20,7 @@ import {
   XIcon,
 } from "@ledgerone/ui";
 import { useAuth } from "@/modules/authentication/hooks/use-auth";
-import { NAVIGATION_ITEMS, getBreadcrumbTrail } from "./navigation.config";
+import { NAV_ENTRIES, getBreadcrumbTrail, type NavItem } from "./navigation.config";
 
 // LAY-001: the desktop-first ERP shell — persistent left navigation, top
 // header chrome, breadcrumb, and a content slot. Responsive collapse
@@ -41,12 +42,70 @@ export function ErpShell({ children }: { children: ReactNode }) {
   );
   const breadcrumbTrail = getBreadcrumbTrail(pathname ?? "/");
 
+  // Each submenu toggles independently (any number can be open at once).
+  // Starts with whichever submenu holds the current route already expanded.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    () =>
+      new Set(
+        NAV_ENTRIES.filter((entry): entry is Extract<(typeof NAV_ENTRIES)[number], { kind: "group" }> =>
+          entry.kind === "group" && entry.items.some((item) => pathname === item.href),
+        ).map((entry) => entry.key),
+      ),
+  );
+
   function toggleCollapsed() {
     setIsCollapsed((current) => {
       const next = !current;
       window.localStorage.setItem("erpShellCollapsed", next ? "1" : "0");
       return next;
     });
+  }
+
+  function toggleGroup(key: string) {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  // A collapsed rail has nowhere to show a submenu panel — clicking a group
+  // header there first pulls the rail back out and opens that group, rather
+  // than toggling a now-invisible panel.
+  function handleGroupHeaderClick(key: string) {
+    if (isCollapsed) {
+      setIsCollapsed(false);
+      window.localStorage.setItem("erpShellCollapsed", "0");
+      setExpandedGroups((current) => new Set(current).add(key));
+    } else {
+      toggleGroup(key);
+    }
+  }
+
+  function renderNavLink(item: NavItem, options: { indent?: boolean } = {}) {
+    const isActive = pathname === item.href;
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        aria-current={isActive ? "page" : undefined}
+        onClick={() => setIsMobileNavOpen(false)}
+        title={isCollapsed ? item.label : undefined}
+        className={`flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors ${
+          options.indent ? "px-3 lg:pl-10" : "px-3"
+        } ${isCollapsed ? "lg:justify-center lg:px-0" : ""} ${
+          isActive ? "bg-primary-500 text-white" : "text-ink-muted hover:bg-white/[0.06] hover:text-ink"
+        }`}
+      >
+        <Icon className="h-5 w-5 shrink-0" />
+        <span className={isCollapsed ? "lg:hidden" : ""}>{item.label}</span>
+      </Link>
+    );
   }
 
   return (
@@ -99,30 +158,48 @@ export function ErpShell({ children }: { children: ReactNode }) {
 
         <nav aria-label="Primary" className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-0.5">
-            {NAVIGATION_ITEMS.map((item, index) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-              const previousGroup = index > 0 ? NAVIGATION_ITEMS[index - 1]!.group : undefined;
-              const showDivider = item.group !== undefined && item.group !== previousGroup;
+            {NAV_ENTRIES.map((entry, index) => {
+              if (entry.kind === "link") {
+                return <li key={entry.item.href}>{renderNavLink(entry.item)}</li>;
+              }
+
+              const isExpanded = expandedGroups.has(entry.key);
+              const hasActiveChild = entry.items.some((item) => pathname === item.href);
+              const GroupIcon = entry.icon;
+              const panelId = `nav-group-panel-${entry.key}`;
               return (
-                <li key={item.href}>
-                  {showDivider && <div className="my-2 border-t border-surface-border" aria-hidden="true" />}
-                  <Link
-                    href={item.href}
-                    aria-current={isActive ? "page" : undefined}
-                    onClick={() => setIsMobileNavOpen(false)}
-                    title={isCollapsed ? item.label : undefined}
-                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                <li key={entry.key} className={index > 0 ? "mt-2 border-t border-surface-border pt-2" : undefined}>
+                  <button
+                    type="button"
+                    onClick={() => handleGroupHeaderClick(entry.key)}
+                    aria-expanded={isExpanded}
+                    aria-controls={panelId}
+                    title={isCollapsed ? entry.label : undefined}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
                       isCollapsed ? "lg:justify-center lg:px-0" : ""
                     } ${
-                      isActive
-                        ? "bg-primary-500 text-white"
+                      hasActiveChild
+                        ? "bg-primary-500/15 text-primary-400"
                         : "text-ink-muted hover:bg-white/[0.06] hover:text-ink"
                     }`}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
-                    <span className={isCollapsed ? "lg:hidden" : ""}>{item.label}</span>
-                  </Link>
+                    <GroupIcon className="h-5 w-5 shrink-0" />
+                    <span className={`flex-1 truncate text-left uppercase tracking-wide text-xs font-semibold ${isCollapsed ? "lg:hidden" : ""}`}>
+                      {entry.label}
+                    </span>
+                    <ChevronDownIcon
+                      className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""} ${
+                        isCollapsed ? "lg:hidden" : ""
+                      }`}
+                    />
+                  </button>
+                  {isExpanded && (
+                    <ul id={panelId} className={`mt-0.5 flex flex-col gap-0.5 ${isCollapsed ? "lg:hidden" : ""}`}>
+                      {entry.items.map((item) => (
+                        <li key={item.href}>{renderNavLink(item, { indent: true })}</li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}

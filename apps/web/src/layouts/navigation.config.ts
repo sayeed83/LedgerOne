@@ -20,10 +20,11 @@ export interface NavItem {
   label: string;
   href: string;
   icon: (props: IconProps) => JSX.Element;
-  // Purely a rendering hint for ErpShell (a divider is drawn whenever this
-  // value changes between consecutive items) — getBreadcrumbTrail below
-  // ignores it entirely, so grouping items differently never touches
-  // breadcrumb behavior.
+  // Purely a rendering hint for ErpShell — consecutive items sharing a
+  // `group` render as one collapsible submenu instead of standalone links
+  // (see buildNavEntries/NAV_ENTRIES below). getBreadcrumbTrail ignores it
+  // entirely, so grouping items differently never touches breadcrumb
+  // behavior.
   group?: string;
 }
 
@@ -34,10 +35,10 @@ export interface NavItem {
 // `href` aligned to that module's `/api/v1/...` resource path.
 export const NAVIGATION_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/", icon: GridIcon },
-  { label: "Organization", href: "/organization", icon: BuildingIcon, group: "Organization & Access" },
-  { label: "User Management", href: "/users", icon: UsersIcon, group: "Organization & Access" },
-  { label: "Roles", href: "/authorization/roles", icon: KeyIcon, group: "Organization & Access" },
-  { label: "Permissions", href: "/authorization/permissions", icon: ShieldCheckIcon, group: "Organization & Access" },
+  { label: "Organization", href: "/organization", icon: BuildingIcon, group: "Org & Access" },
+  { label: "User Management", href: "/users", icon: UsersIcon, group: "Org & Access" },
+  { label: "Roles", href: "/authorization/roles", icon: KeyIcon, group: "Org & Access" },
+  { label: "Permissions", href: "/authorization/permissions", icon: ShieldCheckIcon, group: "Org & Access" },
   { label: "Financial Year", href: "/accounting/financial-years", icon: CalendarIcon, group: "Accounting" },
   { label: "Currency", href: "/accounting/currencies", icon: CoinsIcon, group: "Accounting" },
   { label: "Exchange Rates", href: "/accounting/exchange-rates", icon: ArrowsRightLeftIcon, group: "Accounting" },
@@ -56,6 +57,59 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   { label: "Batches", href: "/inventory/batches", icon: CalendarIcon, group: "Inventory" },
   { label: "Reorder Levels", href: "/inventory/reorder-levels", icon: FilterIcon, group: "Inventory" },
 ];
+
+// One icon per group header — deliberately distinct from any single item's
+// icon inside it, so the collapsed submenu reads as its own entity rather
+// than an arbitrary member item standing in for the whole group.
+const GROUP_ICONS: Record<string, (props: IconProps) => JSX.Element> = {
+  "Org & Access": ShieldCheckIcon,
+  Accounting: BookOpenIcon,
+  Inventory: LayersIcon,
+};
+
+export interface NavLinkEntry {
+  kind: "link";
+  item: NavItem;
+}
+
+export interface NavGroupEntry {
+  kind: "group";
+  key: string;
+  label: string;
+  icon: (props: IconProps) => JSX.Element;
+  items: NavItem[];
+}
+
+export type NavEntry = NavLinkEntry | NavGroupEntry;
+
+// Folds NAVIGATION_ITEMS' flat list into ErpShell's render shape: an
+// ungrouped item stays a standalone link, and a run of consecutive items
+// sharing the same `group` collapses into one submenu — same source list
+// getBreadcrumbTrail reads, so the two never drift apart.
+function buildNavEntries(items: NavItem[]): NavEntry[] {
+  const entries: NavEntry[] = [];
+  for (const item of items) {
+    if (!item.group) {
+      entries.push({ kind: "link", item });
+      continue;
+    }
+    const last = entries[entries.length - 1];
+    if (last?.kind === "group" && last.label === item.group) {
+      last.items.push(item);
+    } else {
+      entries.push({
+        kind: "group",
+        key: item.group,
+        label: item.group,
+        icon: GROUP_ICONS[item.group] ?? item.icon,
+        items: [item],
+      });
+    }
+  }
+  return entries;
+}
+
+export const NAV_ENTRIES: NavEntry[] = buildNavEntries(NAVIGATION_ITEMS);
 
 export interface BreadcrumbItem {
   label: string;
