@@ -20,6 +20,7 @@ import {
   DuplicateWarehouseNameError,
   StockNotFoundError,
   StockAlreadyExistsError,
+  InventoryAdjustmentNotFoundError,
 } from "../../business/inventory-errors";
 
 export interface HttpErrorMapping {
@@ -60,6 +61,9 @@ export function mapDomainErrorToHttp(error: DomainError): HttpErrorMapping {
   }
   if (error instanceof StockAlreadyExistsError) {
     return { status: 409, code: "INV_STOCK_ALREADY_EXISTS" };
+  }
+  if (error instanceof InventoryAdjustmentNotFoundError) {
+    return { status: 404, code: "INV_INVENTORY_ADJUSTMENT_NOT_FOUND" };
   }
   // Per 07_REST_API_STANDARDS.md §9.4's default for module-specific business
   // errors not individually listed.

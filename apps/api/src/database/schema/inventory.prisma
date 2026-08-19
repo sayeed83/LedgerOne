@@ -237,6 +237,9 @@ model Product {
   /// Back-relation for Stock's real, in-module RESTRICT FK (Ch.38.9) — this milestone's Database layer only, no repository/service reads this relation yet.
   stocks Stock[]
 
+  /// Back-relation for Inventory Adjustment's real, in-module RESTRICT FK (Ch.44.3) — this milestone's Database layer only, no repository/service reads this relation yet.
+  inventoryAdjustments InventoryAdjustment[]
+
   /// Stocked (tracked in Inventory) vs. Non-Stocked (e.g. a service) classification, set at creation (Ch.34.7 PRD-002). Immutability once transacted (Ch.34.12) is a Business-layer concern.
   isStocked Boolean @map("is_stocked")
 
@@ -421,4 +424,99 @@ model Stock {
   @@index([warehouseUuid, productId], map: "idx_stocks_warehouse_product")
   @@index([tenantId, companyUuid, warehouseUuid], map: "idx_stocks_tenant_company_warehouse")
   @@map("stocks")
+}
+
+// Inventory Adjustment (00_BUSINESS_RULES.md Ch.44: a manual correction to
+// Stock's, Ch.38, quantity — arising from a physical count reconciliation,
+// damage, loss, or theft — distinct from the ordinary transactional Stock
+// Movements, Ch.39, that Sales/Purchase/Transfer processes generate).
+// Tenant-owned (`tenant_id`, MT-001). This Database-only milestone models
+// ONLY the adjustment record itself, per Ch.44.3's own "Owns:" list ("the
+// adjustment quantity..., the reason code...") — the Stock Movement and
+// Journal Entry each Adjustment atomically generates (ADJ-002), the
+// approval-threshold workflow (ADJ-003/Ch.13), and the actual application of
+// this adjustment against Stock's own on-hand quantity (Ch.38) are all
+// out of scope, deferred to later Repository/Business milestones, mirroring
+// how Stock's own STK-001 arithmetic was deferred at its Database milestone.
+//
+// `companyUuid` and `warehouseUuid` are both cross-module references
+// (FK-002, no DB-level FK) — explicitly NOT modeled as real foreign keys per
+// this milestone's own instruction, mirroring Stock's identical treatment of
+// both fields (see Stock's own file-level comment above for the full
+// reasoning: `warehouseUuid` targets this same module's own Warehouse by
+// `uuid`, not `id`, since Warehouse's real parent relationship lives via
+// Organization's Branch). `productId`, by contrast, IS a real, in-module
+// RESTRICT FK (FK-001) to this module's own `products.id` — the one
+// relationship this milestone's own instruction explicitly asked for,
+// mirroring Stock's identical `productId` FK treatment exactly.
+//
+// `adjustmentType` (AdjustmentType: INCREASE/DECREASE) models Ch.44.3's
+// "adjustment quantity (positive or negative)" as an explicit direction flag
+// alongside an always-positive `quantity` magnitude, rather than a single
+// signed quantity column — an explicitly flagged, undocumented-but-
+// reasonable modeling choice (the handbook describes the concept, not the
+// column shape), consistent with how Stock's own quantity precision/scale
+// was similarly flagged. `quantity` is `DECIMAL(18,6)`, mirroring Stock's
+// own quantity columns exactly (fractional-quantity-safe).
+//
+// `reason` (ADJ-001: "Every Inventory Adjustment must specify a reason code
+// — an unexplained quantity change is never permitted") is modeled as a
+// plain `VARCHAR`, not an enum — Ch.44.7 names example reason codes inline
+// ("physical count variance, damage, theft, expiry write-off") but documents
+// no closed, exhaustive list the way `ProductStatus`/`WarehouseStatus` have
+// one; a plain string field is not silently narrower than the handbook
+// warrants — mirroring `narration`'s own free-text treatment on
+// `JournalEntry`. `remarks` is a separate, optional free-text field for
+// additional detail beyond the reason code, per this milestone's own
+// explicit field list.
+//
+// No uniqueness constraint across `(warehouseUuid, productId)` — unlike
+// Stock's own STK-003 "at most one row" rule, Inventory Adjustment is a
+// transactional, append-style record: the same Product in the same
+// Warehouse may legitimately be adjusted many times over its history.
+model InventoryAdjustment {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK, mirroring Stock's own `companyUuid` treatment.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Cross-module reference to this module's own `warehouses.uuid` (FK-002) — no DB-level FK, mirroring Stock's own `warehouseUuid` treatment.
+  warehouseUuid String @db.Char(36) @map("warehouse_uuid")
+
+  /// Real, in-module RESTRICT FK to this module's own Product (Ch.34) — required, mirroring Stock's own `productId` FK treatment; the one relationship this milestone's own instruction asked for.
+  productId BigInt  @db.UnsignedBigInt @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Direction of the correction (Ch.44.3: "adjustment quantity (positive or negative)") — modeled as an explicit flag alongside an always-positive `quantity` magnitude.
+  adjustmentType AdjustmentType @map("adjustment_type")
+
+  /// Magnitude of the correction — DECIMAL(18,6), mirroring Stock's own quantity columns exactly (fractional-quantity-safe).
+  quantity Decimal @db.Decimal(18, 6) @map("quantity")
+
+  /// Reason code (ADJ-001: mandatory, "an unexplained quantity change is never permitted") — plain text, since Ch.44.7 documents example values, not a closed enumerated list.
+  reason String @db.VarChar(255) @map("reason")
+
+  /// Optional free-text detail beyond the reason code.
+  remarks String? @db.VarChar(500) @map("remarks")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@index([tenantId, companyUuid], map: "idx_inventory_adjustments_tenant_company")
+  @@index([warehouseUuid, productId], map: "idx_inventory_adjustments_warehouse_product")
+  @@index([productId], map: "idx_inventory_adjustments_product")
+  @@map("inventory_adjustments")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.44.3's "adjustment quantity (positive or negative)" as an explicit direction flag (05_CODING_STANDARDS.md Ch.26.4).
+enum AdjustmentType {
+  INCREASE
+  DECREASE
+
+  @@map("adjustment_type")
 }

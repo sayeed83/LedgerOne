@@ -7,8 +7,10 @@ import { Unit } from "../../domain/entities/unit.entity";
 import { Product } from "../../domain/entities/product.entity";
 import { Warehouse } from "../../domain/entities/warehouse.entity";
 import { Stock } from "../../domain/entities/stock.entity";
+import { InventoryAdjustment } from "../../domain/entities/inventory-adjustment.entity";
 import { ProductStatus } from "../../domain/enums/product-status.enum";
 import { WarehouseStatus } from "../../domain/enums/warehouse-status.enum";
+import { AdjustmentType } from "../../domain/enums/adjustment-type.enum";
 import { IInventoryRepository } from "../../domain/interfaces/inventory-repository.interface";
 
 export function buildProductCategory(overrides: Partial<ProductCategory> = {}): ProductCategory {
@@ -109,6 +111,27 @@ export function buildStock(overrides: Partial<Stock> = {}): Stock {
   return Object.assign(Object.create(Stock.prototype), base, overrides) as Stock;
 }
 
+export function buildInventoryAdjustment(overrides: Partial<InventoryAdjustment> = {}): InventoryAdjustment {
+  const base = new InventoryAdjustment(
+    1n,
+    "00000000-0000-0000-0000-000000000006",
+    1n,
+    "00000000-0000-0000-0000-000000000100",
+    "00000000-0000-0000-0000-000000000200",
+    1n,
+    AdjustmentType.Increase,
+    "1.000000",
+    "Physical count variance",
+    null,
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Date("2026-01-01T00:00:00.000Z"),
+    null,
+    null,
+    null,
+  );
+  return Object.assign(Object.create(InventoryAdjustment.prototype), base, overrides) as InventoryAdjustment;
+}
+
 export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepository> {
   return {
     createProductCategory: jest.fn(),
@@ -140,5 +163,11 @@ export function createFakeInventoryRepository(): jest.Mocked<IInventoryRepositor
     findStockByWarehouseAndProduct: jest.fn(),
     listStocksByWarehouse: jest.fn(),
     listStocksByCompany: jest.fn(),
+    createInventoryAdjustment: jest.fn(),
+    updateInventoryAdjustment: jest.fn(),
+    findInventoryAdjustmentByUuid: jest.fn(),
+    listInventoryAdjustmentsByWarehouse: jest.fn(),
+    listInventoryAdjustmentsByProduct: jest.fn(),
+    listInventoryAdjustmentsByCompany: jest.fn(),
   };
 }

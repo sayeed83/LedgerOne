@@ -13,8 +13,10 @@ import {
   Product as ProductModel,
   Warehouse as WarehouseModel,
   Stock as StockModel,
+  InventoryAdjustment as InventoryAdjustmentModel,
   ProductStatus as PrismaProductStatus,
   WarehouseStatus as PrismaWarehouseStatus,
+  AdjustmentType as PrismaAdjustmentType,
 } from "../../../database/generated/client";
 import {
   ProductCategory,
@@ -25,14 +27,21 @@ import { Unit, CreateUnitProps, UpdateUnitProps } from "../domain/entities/unit.
 import { Product, CreateProductProps, UpdateProductProps } from "../domain/entities/product.entity";
 import { Warehouse, CreateWarehouseProps, UpdateWarehouseProps } from "../domain/entities/warehouse.entity";
 import { Stock, CreateStockProps, UpdateStockProps } from "../domain/entities/stock.entity";
+import {
+  InventoryAdjustment,
+  CreateInventoryAdjustmentProps,
+  UpdateInventoryAdjustmentProps,
+} from "../domain/entities/inventory-adjustment.entity";
 import { ProductStatus } from "../domain/enums/product-status.enum";
 import { WarehouseStatus } from "../domain/enums/warehouse-status.enum";
+import { AdjustmentType } from "../domain/enums/adjustment-type.enum";
 import {
   ProductCategoryNotFoundError,
   UnitNotFoundError,
   ProductNotFoundError,
   WarehouseNotFoundError,
   StockNotFoundError,
+  InventoryAdjustmentNotFoundError,
 } from "../domain/errors/inventory.errors";
 import { IInventoryRepository, RepositoryTransaction } from "../domain/interfaces/inventory-repository.interface";
 
@@ -133,6 +142,29 @@ function toStockDomain(row: StockModel): Stock {
     row.quantityOnHand.toFixed(),
     row.quantityReserved.toFixed(),
     row.quantityAvailable.toFixed(),
+    row.createdAt,
+    row.updatedAt,
+    row.createdBy,
+    row.updatedBy,
+    row.deletedAt,
+  );
+}
+
+/// `.toFixed()` (not `.toString()`) guarantees plain fixed-point decimal
+/// notation, never exponential notation, mirroring `toStockDomain`'s own
+/// quantity mapping.
+function toInventoryAdjustmentDomain(row: InventoryAdjustmentModel): InventoryAdjustment {
+  return new InventoryAdjustment(
+    row.id,
+    row.uuid,
+    row.tenantId,
+    row.companyUuid,
+    row.warehouseUuid,
+    row.productId,
+    row.adjustmentType as unknown as AdjustmentType,
+    row.quantity.toFixed(),
+    row.reason,
+    row.remarks,
     row.createdAt,
     row.updatedAt,
     row.createdBy,
@@ -529,5 +561,92 @@ export class PrismaInventoryRepository implements IInventoryRepository {
       orderBy: { id: "asc" },
     });
     return rows.map(toStockDomain);
+  }
+
+  // Inventory Adjustment is tenant-owned (06_DATABASE_STANDARDS.md MT-001) —
+  // every query below asserts `tenantId` explicitly and independently, never
+  // trusting a previously-resolved row (MT-002, Ch.6.4's worked example).
+  // `id` is never accepted from outside this file (PK-003) — mutations key
+  // on `(tenantId, uuid)`. `companyUuid`/`warehouseUuid` are uuid-reference
+  // fields (FK-002) and `productId` is a real, in-module FK
+  // (inventory.prisma) — none validated for existence here (a future
+  // Business-layer concern, mirroring Stock's own handling of the identical
+  // fields).
+
+  async createInventoryAdjustment(
+    tenantId: bigint,
+    props: CreateInventoryAdjustmentProps,
+    tx?: RepositoryTransaction,
+  ): Promise<InventoryAdjustment> {
+    const row = await this.client(tx).inventoryAdjustment.create({
+      data: {
+        uuid: newUuid(),
+        tenantId,
+        companyUuid: props.companyUuid,
+        warehouseUuid: props.warehouseUuid,
+        productId: props.productId,
+        adjustmentType: props.adjustmentType as unknown as PrismaAdjustmentType,
+        quantity: props.quantity,
+        reason: props.reason,
+        remarks: props.remarks ?? null,
+        createdBy: props.createdBy ?? null,
+      },
+    });
+    return toInventoryAdjustmentDomain(row);
+  }
+
+  async updateInventoryAdjustment(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateInventoryAdjustmentProps,
+    tx?: RepositoryTransaction,
+  ): Promise<InventoryAdjustment> {
+    const client = this.client(tx);
+    const { count } = await client.inventoryAdjustment.updateMany({
+      where: { tenantId, uuid, deletedAt: null },
+      data: {
+        adjustmentType: props.adjustmentType ? (props.adjustmentType as unknown as PrismaAdjustmentType) : undefined,
+        quantity: props.quantity,
+        reason: props.reason,
+        remarks: props.remarks,
+        updatedBy: props.updatedBy ?? undefined,
+      },
+    });
+    if (count === 0) {
+      throw new InventoryAdjustmentNotFoundError(uuid);
+    }
+    const row = await client.inventoryAdjustment.findFirst({ where: { tenantId, uuid } });
+    return toInventoryAdjustmentDomain(row as InventoryAdjustmentModel);
+  }
+
+  async findInventoryAdjustmentByUuid(tenantId: bigint, uuid: string): Promise<InventoryAdjustment | null> {
+    const row = await prisma.inventoryAdjustment.findFirst({
+      where: { tenantId, uuid, deletedAt: null },
+    });
+    return row ? toInventoryAdjustmentDomain(row) : null;
+  }
+
+  async listInventoryAdjustmentsByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<InventoryAdjustment[]> {
+    const rows = await prisma.inventoryAdjustment.findMany({
+      where: { tenantId, warehouseUuid, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toInventoryAdjustmentDomain);
+  }
+
+  async listInventoryAdjustmentsByProduct(tenantId: bigint, productId: bigint): Promise<InventoryAdjustment[]> {
+    const rows = await prisma.inventoryAdjustment.findMany({
+      where: { tenantId, productId, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toInventoryAdjustmentDomain);
+  }
+
+  async listInventoryAdjustmentsByCompany(tenantId: bigint, companyUuid: string): Promise<InventoryAdjustment[]> {
+    const rows = await prisma.inventoryAdjustment.findMany({
+      where: { tenantId, companyUuid, deletedAt: null },
+      orderBy: { id: "asc" },
+    });
+    return rows.map(toInventoryAdjustmentDomain);
   }
 }

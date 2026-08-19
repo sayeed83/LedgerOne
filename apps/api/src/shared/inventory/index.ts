@@ -28,6 +28,10 @@ import { createStockController } from "./presentation/controllers/v1/create-stoc
 import { getStockController } from "./presentation/controllers/v1/get-stock.controller";
 import { updateStockController } from "./presentation/controllers/v1/update-stock.controller";
 import { listStocksByWarehouseController } from "./presentation/controllers/v1/list-stocks-by-warehouse.controller";
+import { createInventoryAdjustmentController } from "./presentation/controllers/v1/create-inventory-adjustment.controller";
+import { getInventoryAdjustmentController } from "./presentation/controllers/v1/get-inventory-adjustment.controller";
+import { updateInventoryAdjustmentController } from "./presentation/controllers/v1/update-inventory-adjustment.controller";
+import { listInventoryAdjustmentsByWarehouseController } from "./presentation/controllers/v1/list-inventory-adjustments-by-warehouse.controller";
 
 export function createInventoryRouter(deps: InventoryDependencies): Router {
   const router = Router();
@@ -66,6 +70,12 @@ export function createInventoryRouter(deps: InventoryDependencies): Router {
   router.get("/stocks", listStocksByWarehouseController(deps));
   router.get("/stocks/:stockUuid", getStockController(deps));
   router.put("/stocks/:stockUuid", updateStockController(deps));
+
+  // --- Inventory Adjustment ---
+  router.post("/adjustments", createInventoryAdjustmentController(deps));
+  router.get("/adjustments", listInventoryAdjustmentsByWarehouseController(deps));
+  router.get("/adjustments/:adjustmentUuid", getInventoryAdjustmentController(deps));
+  router.put("/adjustments/:adjustmentUuid", updateInventoryAdjustmentController(deps));
 
   return router;
 }

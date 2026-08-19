@@ -1,12 +1,15 @@
 import type {
+  CreateInventoryAdjustmentRequestDto,
   CreateProductRequestDto,
   CreateStockRequestDto,
   CreateUnitRequestDto,
   CreateWarehouseRequestDto,
+  InventoryAdjustmentResponseDto,
   ProductCategoryResponseDto,
   ProductResponseDto,
   StockResponseDto,
   UnitResponseDto,
+  UpdateInventoryAdjustmentRequestDto,
   UpdateProductRequestDto,
   UpdateStockRequestDto,
   UpdateUnitRequestDto,
@@ -148,5 +151,44 @@ export async function createStock(payload: CreateStockRequestDto): Promise<Stock
 
 export async function updateStock(stockUuid: string, payload: UpdateStockRequestDto): Promise<StockResponseDto> {
   const response = await apiClient.put<Envelope<StockResponseDto>>(`/inventory/stocks/${stockUuid}`, payload);
+  return response.data.data;
+}
+
+// --- Inventory Adjustment ---
+
+export async function listInventoryAdjustmentsByWarehouse(
+  warehouseUuid: string,
+): Promise<InventoryAdjustmentResponseDto[]> {
+  const response = await apiClient.get<Envelope<InventoryAdjustmentResponseDto[]>>("/inventory/adjustments", {
+    params: { warehouseUuid },
+  });
+  return response.data.data;
+}
+
+export async function getInventoryAdjustment(adjustmentUuid: string): Promise<InventoryAdjustmentResponseDto> {
+  const response = await apiClient.get<Envelope<InventoryAdjustmentResponseDto>>(
+    `/inventory/adjustments/${adjustmentUuid}`,
+  );
+  return response.data.data;
+}
+
+export async function createInventoryAdjustment(
+  payload: CreateInventoryAdjustmentRequestDto,
+): Promise<InventoryAdjustmentResponseDto> {
+  const response = await apiClient.post<Envelope<InventoryAdjustmentResponseDto>>(
+    "/inventory/adjustments",
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function updateInventoryAdjustment(
+  adjustmentUuid: string,
+  payload: UpdateInventoryAdjustmentRequestDto,
+): Promise<InventoryAdjustmentResponseDto> {
+  const response = await apiClient.put<Envelope<InventoryAdjustmentResponseDto>>(
+    `/inventory/adjustments/${adjustmentUuid}`,
+    payload,
+  );
   return response.data.data;
 }

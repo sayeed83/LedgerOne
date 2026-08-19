@@ -85,3 +85,10 @@ export class StockAlreadyExistsError extends DomainError {
     super(`Stock already exists for Warehouse '${warehouseUuid}' and Product '${productId}'.`);
   }
 }
+
+/** Raised when a tenant-scoped lookup by `uuid` matches no row — either the Inventory Adjustment does not exist or it does not belong to the resolved tenant (06_DATABASE_STANDARDS.md MT-002). Thrown by `updateInventoryAdjustment` on zero rows matched (`updateMany`+refetch pattern). */
+export class InventoryAdjustmentNotFoundError extends DomainError {
+  constructor(identifier: string) {
+    super(`Inventory Adjustment '${identifier}' was not found.`);
+  }
+}

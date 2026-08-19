@@ -70,11 +70,26 @@
 // reserved/available arithmetic (STK-001), negative-stock prevention, or
 // duplicate-Stock prevention is implemented here — persistence only, all
 // Business-layer concerns for a later milestone.
+//
+// Inventory Adjustment (Ch.44) is likewise tenant-owned (MT-001) with
+// cross-module/in-module uuid-reference fields `companyUuid`/`warehouseUuid`
+// (FK-002, no DB-level FK) and a real, in-module FK `productId` to this
+// module's own Product, mirroring Stock's own reference shape exactly. No
+// reason-code validation (ADJ-001), approval-threshold workflow
+// (ADJ-003/Ch.13), Stock Movement/Journal Entry generation (ADJ-002), or
+// application of the adjustment against Stock's own on-hand quantity is
+// implemented here — persistence only, all Business-layer concerns for a
+// later milestone.
 import { ProductCategory, CreateProductCategoryProps, UpdateProductCategoryProps } from "../entities/product-category.entity";
 import { Unit, CreateUnitProps, UpdateUnitProps } from "../entities/unit.entity";
 import { Product, CreateProductProps, UpdateProductProps } from "../entities/product.entity";
 import { Warehouse, CreateWarehouseProps, UpdateWarehouseProps } from "../entities/warehouse.entity";
 import { Stock, CreateStockProps, UpdateStockProps } from "../entities/stock.entity";
+import {
+  InventoryAdjustment,
+  CreateInventoryAdjustmentProps,
+  UpdateInventoryAdjustmentProps,
+} from "../entities/inventory-adjustment.entity";
 
 /**
  * Opaque handle for an in-flight transaction, supplied by the Business
@@ -149,4 +164,23 @@ export interface IInventoryRepository {
   listStocksByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<Stock[]>;
   /** Every Stock row belonging to a single Company, across every Warehouse. */
   listStocksByCompany(tenantId: bigint, companyUuid: string): Promise<Stock[]>;
+
+  createInventoryAdjustment(
+    tenantId: bigint,
+    props: CreateInventoryAdjustmentProps,
+    tx?: RepositoryTransaction,
+  ): Promise<InventoryAdjustment>;
+  updateInventoryAdjustment(
+    tenantId: bigint,
+    uuid: string,
+    props: UpdateInventoryAdjustmentProps,
+    tx?: RepositoryTransaction,
+  ): Promise<InventoryAdjustment>;
+  findInventoryAdjustmentByUuid(tenantId: bigint, uuid: string): Promise<InventoryAdjustment | null>;
+  /** Every Inventory Adjustment belonging to a single Warehouse. */
+  listInventoryAdjustmentsByWarehouse(tenantId: bigint, warehouseUuid: string): Promise<InventoryAdjustment[]>;
+  /** Every Inventory Adjustment belonging to a single Product, across every Warehouse. */
+  listInventoryAdjustmentsByProduct(tenantId: bigint, productId: bigint): Promise<InventoryAdjustment[]>;
+  /** Every Inventory Adjustment belonging to a single Company, across every Warehouse. */
+  listInventoryAdjustmentsByCompany(tenantId: bigint, companyUuid: string): Promise<InventoryAdjustment[]>;
 }
