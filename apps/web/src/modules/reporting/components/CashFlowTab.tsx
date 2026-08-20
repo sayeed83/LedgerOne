@@ -73,7 +73,7 @@ export function CashFlowTab({ companyUuid }: { companyUuid: string }) {
 
       {!hasScope && (
         <Card>
-          <CardContent className="pt-6 text-sm text-ink-muted">
+          <CardContent className="pt-6 text-sm text-ink-muted light:text-light-ink-muted">
             Select a Fiscal Period, a Financial Year, or a date range to run this report.
           </CardContent>
         </Card>
@@ -81,7 +81,7 @@ export function CashFlowTab({ companyUuid }: { companyUuid: string }) {
 
       {hasScope && cashFlowQuery.isLoading && (
         <Card>
-          <CardContent className="pt-6 text-sm text-ink-muted">Loading Cash Flow…</CardContent>
+          <CardContent className="pt-6 text-sm text-ink-muted light:text-light-ink-muted">Loading Cash Flow…</CardContent>
         </Card>
       )}
 
@@ -95,7 +95,7 @@ export function CashFlowTab({ companyUuid }: { companyUuid: string }) {
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm">
                 Period:{" "}
-                <span className="font-semibold text-ink">
+                <span className="font-semibold text-ink light:text-light-ink">
                   {cashFlowQuery.data.periodStart.slice(0, 10)} – {cashFlowQuery.data.periodEnd.slice(0, 10)}
                 </span>
               </span>
@@ -120,8 +120,8 @@ export function CashFlowTab({ companyUuid }: { companyUuid: string }) {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-1 text-sm text-ink">{value}</dd>
+      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">{label}</dt>
+      <dd className="mt-1 text-sm text-ink light:text-light-ink">{value}</dd>
     </div>
   );
 }

@@ -10,7 +10,10 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 export function Card({ children, className, ...rest }: CardProps) {
   return (
     <div
-      className={cn("rounded-2xl border border-surface-border bg-surface-card shadow-card", className)}
+      className={cn(
+        "rounded-2xl border border-surface-border light:border-light-surface-border bg-surface-card light:bg-light-surface-card shadow-card",
+        className,
+      )}
       {...rest}
     >
       {children}
@@ -28,7 +31,7 @@ export function CardHeader({ children, className, ...rest }: HTMLAttributes<HTML
 
 export function CardTitle({ children, className, ...rest }: HTMLAttributes<HTMLHeadingElement>) {
   return (
-    <h3 className={cn("text-lg font-semibold tracking-tight text-ink", className)} {...rest}>
+    <h3 className={cn("text-lg font-semibold tracking-tight text-ink light:text-light-ink", className)} {...rest}>
       {children}
     </h3>
   );
@@ -36,7 +39,7 @@ export function CardTitle({ children, className, ...rest }: HTMLAttributes<HTMLH
 
 export function CardDescription({ children, className, ...rest }: HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cn("text-sm text-ink-muted", className)} {...rest}>
+    <p className={cn("text-sm text-ink-muted light:text-light-ink-muted", className)} {...rest}>
       {children}
     </p>
   );
@@ -52,7 +55,10 @@ export function CardContent({ children, className, ...rest }: HTMLAttributes<HTM
 
 export function CardFooter({ children, className, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("flex items-center gap-3 border-t border-surface-border p-6", className)} {...rest}>
+    <div
+      className={cn("flex items-center gap-3 border-t border-surface-border light:border-light-surface-border p-6", className)}
+      {...rest}
+    >
       {children}
     </div>
   );

@@ -185,16 +185,16 @@ export function TenantScreen() {
           <CardContent className="flex flex-col gap-4 pt-4">
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Tenant UUID</dt>
-                <dd className="mt-1 text-sm text-ink">{tenantQuery.data.uuid}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Tenant UUID</dt>
+                <dd className="mt-1 text-sm text-ink light:text-light-ink">{tenantQuery.data.uuid}</dd>
               </div>
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Primary Contact Email</dt>
-                <dd className="mt-1 text-sm text-ink">{tenantQuery.data.primaryContactEmail}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Primary Contact Email</dt>
+                <dd className="mt-1 text-sm text-ink light:text-light-ink">{tenantQuery.data.primaryContactEmail}</dd>
               </div>
             </dl>
 
-            <div className="flex flex-wrap items-center gap-2 border-t border-surface-border pt-4">
+            <div className="flex flex-wrap items-center gap-2 border-t border-surface-border light:border-light-surface-border pt-4">
               <LoadingButton
                 variant="secondary"
                 size="sm"
@@ -339,16 +339,16 @@ function TenantSettingsCard({ tenantUuid }: { tenantUuid: string }) {
         {settingsQuery.data && (
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Default Currency</dt>
-              <dd className="mt-1 text-sm text-ink">{settingsQuery.data.defaultCurrencyCode}</dd>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Default Currency</dt>
+              <dd className="mt-1 text-sm text-ink light:text-light-ink">{settingsQuery.data.defaultCurrencyCode}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Default Time Zone</dt>
-              <dd className="mt-1 text-sm text-ink">{settingsQuery.data.defaultTimeZone}</dd>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Default Time Zone</dt>
+              <dd className="mt-1 text-sm text-ink light:text-light-ink">{settingsQuery.data.defaultTimeZone}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Financial Year Pattern</dt>
-              <dd className="mt-1 text-sm text-ink">{settingsQuery.data.defaultFinancialYearPattern}</dd>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Financial Year Pattern</dt>
+              <dd className="mt-1 text-sm text-ink light:text-light-ink">{settingsQuery.data.defaultFinancialYearPattern}</dd>
             </div>
           </dl>
         )}
@@ -443,16 +443,16 @@ function TenantSubscriptionCard({ tenantUuid }: { tenantUuid: string }) {
         {subscriptionQuery.data && (
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Plan Code</dt>
-              <dd className="mt-1 text-sm text-ink">{subscriptionQuery.data.planCode}</dd>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Plan Code</dt>
+              <dd className="mt-1 text-sm text-ink light:text-light-ink">{subscriptionQuery.data.planCode}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Subscribed Modules</dt>
-              <dd className="mt-1 text-sm text-ink">{subscriptionQuery.data.subscribedModules.join(", ")}</dd>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Subscribed Modules</dt>
+              <dd className="mt-1 text-sm text-ink light:text-light-ink">{subscriptionQuery.data.subscribedModules.join(", ")}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Current Period</dt>
-              <dd className="mt-1 text-sm text-ink">
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Current Period</dt>
+              <dd className="mt-1 text-sm text-ink light:text-light-ink">
                 {subscriptionQuery.data.currentPeriodStartsAt.slice(0, 10)} –{" "}
                 {subscriptionQuery.data.currentPeriodEndsAt.slice(0, 10)}
               </dd>

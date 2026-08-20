@@ -160,7 +160,7 @@ export function Select({
   return (
     <div ref={containerRef} className={cn("flex flex-col", compact ? "gap-0" : "gap-1.5")}>
       {!compact && (
-        <label htmlFor={selectId} className="text-sm font-medium text-ink">
+        <label htmlFor={selectId} className="text-sm font-medium text-ink light:text-light-ink">
           {label}
         </label>
       )}
@@ -169,7 +169,9 @@ export function Select({
           className={cn(
             "pointer-events-none absolute inset-y-0 left-0 flex items-center justify-center",
             "w-9",
-            compact ? "text-ink-faint" : "text-ink-muted",
+            compact
+              ? "text-ink-faint light:text-light-ink-faint"
+              : "text-ink-muted light:text-light-ink-muted",
           )}
           aria-hidden="true"
         >
@@ -211,10 +213,10 @@ export function Select({
             onBlur?.();
           }}
           className={cn(
-            "w-full rounded-xl border bg-surface-sunken py-2 pl-9 pr-8 text-sm text-ink transition-colors placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
+            "w-full rounded-xl border bg-surface-sunken light:bg-light-surface-sunken py-2 pl-9 pr-8 text-sm text-ink light:text-light-ink transition-colors placeholder:text-ink-faint light:placeholder:text-light-ink-faint focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
             error
               ? "border-danger-500 focus:border-danger-500 focus:ring-danger-500/30"
-              : "border-surface-border focus:border-primary-500",
+              : "border-surface-border light:border-light-surface-border focus:border-primary-500",
             className,
           )}
         />
@@ -231,7 +233,7 @@ export function Select({
               inputRef.current?.focus();
             }
           }}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint disabled:cursor-not-allowed"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint light:text-light-ink-faint disabled:cursor-not-allowed"
         >
           <ChevronDownIcon className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-180")} />
         </button>
@@ -240,10 +242,10 @@ export function Select({
           <ul
             id={listboxId}
             role="listbox"
-            className="absolute z-20 mt-1.5 max-h-64 w-full min-w-[12rem] overflow-auto rounded-xl border border-surface-border bg-surface-card py-1.5 shadow-lg"
+            className="absolute z-20 mt-1.5 max-h-64 w-full min-w-[12rem] overflow-auto rounded-xl border border-surface-border light:border-light-surface-border bg-surface-card light:bg-light-surface-card py-1.5 shadow-lg"
           >
             {filteredOptions.length === 0 && (
-              <li className="px-4 py-2.5 text-sm text-ink-muted">No matches</li>
+              <li className="px-4 py-2.5 text-sm text-ink-muted light:text-light-ink-muted">No matches</li>
             )}
             {filteredOptions.map((option, index) => (
               <li
@@ -259,7 +261,7 @@ export function Select({
                 }}
                 onMouseEnter={() => setHighlightedIndex(index)}
                 className={cn(
-                  "cursor-pointer px-4 py-2 text-sm text-ink",
+                  "cursor-pointer px-4 py-2 text-sm text-ink light:text-light-ink",
                   index === highlightedIndex && "bg-primary-500/10",
                   option.value === value && "font-medium",
                 )}
@@ -271,7 +273,7 @@ export function Select({
         )}
       </div>
       {hint && !error && (
-        <p id={hintId} className="text-xs text-ink-muted">
+        <p id={hintId} className="text-xs text-ink-muted light:text-light-ink-muted">
           {hint}
         </p>
       )}

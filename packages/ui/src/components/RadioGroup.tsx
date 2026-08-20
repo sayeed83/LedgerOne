@@ -35,7 +35,7 @@ export function RadioGroup({
   return (
     <fieldset className={cn("flex flex-col gap-2.5", className)} aria-describedby={errorId}>
       {label && (
-        <legend className="mb-1 text-sm font-medium text-ink">{label}</legend>
+        <legend className="mb-1 text-sm font-medium text-ink light:text-light-ink">{label}</legend>
       )}
       {options.map((option) => {
         const optionId = `${groupId}-${option.value}`;
@@ -49,12 +49,12 @@ export function RadioGroup({
               checked={value === option.value}
               disabled={option.disabled}
               onChange={() => onChange(option.value)}
-              className="mt-0.5 h-4 w-4 shrink-0 border-surface-border accent-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-0.5 h-4 w-4 shrink-0 border-surface-border light:border-light-surface-border accent-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60"
             />
             <span className="flex flex-col">
-              <span className="text-sm text-ink">{option.label}</span>
+              <span className="text-sm text-ink light:text-light-ink">{option.label}</span>
               {option.hint && (
-                <span className="text-xs text-ink-muted">{option.hint}</span>
+                <span className="text-xs text-ink-muted light:text-light-ink-muted">{option.hint}</span>
               )}
             </span>
           </label>

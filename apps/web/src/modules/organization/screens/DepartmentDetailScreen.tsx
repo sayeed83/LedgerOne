@@ -94,8 +94,8 @@ export function DepartmentDetailScreen() {
           <CardContent className="pt-4">
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Department Code</dt>
-                <dd className="mt-1 text-sm text-ink">{departmentQuery.data.departmentCode}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Department Code</dt>
+                <dd className="mt-1 text-sm text-ink light:text-light-ink">{departmentQuery.data.departmentCode}</dd>
               </div>
             </dl>
           </CardContent>

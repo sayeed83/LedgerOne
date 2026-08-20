@@ -114,13 +114,13 @@ export function TrialBalanceTab({ companyUuid }: { companyUuid: string }) {
         <Card className="mb-4">
           <CardContent className="flex flex-wrap items-center gap-6 pt-6 text-sm">
             <span>
-              As Of: <span className="font-semibold text-ink">{trialBalanceQuery.data.data.asOfDate.slice(0, 10)}</span>
+              As Of: <span className="font-semibold text-ink light:text-light-ink">{trialBalanceQuery.data.data.asOfDate.slice(0, 10)}</span>
             </span>
             <span>
-              Total Debit: <span className="font-semibold text-ink">{trialBalanceQuery.data.data.totalDebit}</span>
+              Total Debit: <span className="font-semibold text-ink light:text-light-ink">{trialBalanceQuery.data.data.totalDebit}</span>
             </span>
             <span>
-              Total Credit: <span className="font-semibold text-ink">{trialBalanceQuery.data.data.totalCredit}</span>
+              Total Credit: <span className="font-semibold text-ink light:text-light-ink">{trialBalanceQuery.data.data.totalCredit}</span>
             </span>
             <Badge variant={trialBalanceQuery.data.data.isBalanced ? "success" : "danger"}>
               {trialBalanceQuery.data.data.isBalanced ? "Balanced" : "Not Balanced"}
@@ -132,7 +132,7 @@ export function TrialBalanceTab({ companyUuid }: { companyUuid: string }) {
 
       {trialBalanceQuery.isLoading && !cursor ? (
         <Card>
-          <CardContent className="pt-6 text-sm text-ink-muted">Loading Trial Balance…</CardContent>
+          <CardContent className="pt-6 text-sm text-ink-muted light:text-light-ink-muted">Loading Trial Balance…</CardContent>
         </Card>
       ) : trialBalanceQuery.isError ? (
         <Alert variant="error" message={getReportingErrorMessage(trialBalanceQuery.error) ?? "Failed to load Trial Balance."} />

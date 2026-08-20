@@ -138,7 +138,7 @@ export function JournalEntryDetailScreen() {
             </LoadingButton>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 pt-4">
-            <p className="text-sm text-ink-muted">{journalEntryQuery.data.narration ?? "No narration."}</p>
+            <p className="text-sm text-ink-muted light:text-light-ink-muted">{journalEntryQuery.data.narration ?? "No narration."}</p>
 
             {/* Flagged known backend gap (see journal-entry.dto.ts): a
                 line's `accountUuid` is not echoed back on read, so this
@@ -149,16 +149,16 @@ export function JournalEntryDetailScreen() {
               emptyTitle="No lines"
               getRowKey={(line) => line.uuid}
             />
-            <div className="flex flex-wrap items-center justify-end gap-6 rounded-xl border border-surface-border bg-white/[0.02] px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center justify-end gap-6 rounded-xl border border-surface-border light:border-light-surface-border bg-white/[0.02] light:bg-black/[0.02] px-4 py-3 text-sm">
               <span>
-                Total Debit: <span className="font-semibold text-ink">{totalDebit.toFixed(2)}</span>
+                Total Debit: <span className="font-semibold text-ink light:text-light-ink">{totalDebit.toFixed(2)}</span>
               </span>
               <span>
-                Total Credit: <span className="font-semibold text-ink">{totalCredit.toFixed(2)}</span>
+                Total Credit: <span className="font-semibold text-ink light:text-light-ink">{totalCredit.toFixed(2)}</span>
               </span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 border-t border-surface-border pt-4">
+            <div className="flex flex-wrap items-center gap-2 border-t border-surface-border light:border-light-surface-border pt-4">
               <LoadingButton
                 variant="secondary"
                 size="sm"

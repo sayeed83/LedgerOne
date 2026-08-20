@@ -69,7 +69,7 @@ export function TabList({ children, className }: TabListProps) {
       ref={listRef}
       role="tablist"
       onKeyDown={handleKeyDown}
-      className={cn("flex items-center gap-1 border-b border-surface-border", className)}
+      className={cn("flex items-center gap-1 border-b border-surface-border light:border-light-surface-border", className)}
     >
       {children}
     </div>
@@ -98,7 +98,9 @@ export function Tab({ value, children, disabled }: TabProps) {
       onClick={() => onChange(value)}
       className={cn(
         "relative px-3.5 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
-        isActive ? "text-ink" : "text-ink-muted hover:text-ink",
+        isActive
+          ? "text-ink light:text-light-ink"
+          : "text-ink-muted light:text-light-ink-muted hover:text-ink light:hover:text-light-ink",
       )}
     >
       {children}

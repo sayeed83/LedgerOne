@@ -99,8 +99,8 @@ export function RoleDetailScreen() {
           <CardContent className="pt-4">
             <dl className="grid grid-cols-1 gap-4">
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Description</dt>
-                <dd className="mt-1 text-sm text-ink">{roleQuery.data.description ?? "—"}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Description</dt>
+                <dd className="mt-1 text-sm text-ink light:text-light-ink">{roleQuery.data.description ?? "—"}</dd>
               </div>
             </dl>
           </CardContent>

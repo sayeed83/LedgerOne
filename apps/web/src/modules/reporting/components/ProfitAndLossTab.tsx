@@ -72,7 +72,7 @@ export function ProfitAndLossTab({ companyUuid }: { companyUuid: string }) {
 
       {!hasScope && (
         <Card>
-          <CardContent className="pt-6 text-sm text-ink-muted">
+          <CardContent className="pt-6 text-sm text-ink-muted light:text-light-ink-muted">
             Select a Fiscal Period, a Financial Year, or a date range to run this report.
           </CardContent>
         </Card>
@@ -80,7 +80,7 @@ export function ProfitAndLossTab({ companyUuid }: { companyUuid: string }) {
 
       {hasScope && profitAndLossQuery.isLoading && (
         <Card>
-          <CardContent className="pt-6 text-sm text-ink-muted">Loading Profit &amp; Loss…</CardContent>
+          <CardContent className="pt-6 text-sm text-ink-muted light:text-light-ink-muted">Loading Profit &amp; Loss…</CardContent>
         </Card>
       )}
 
@@ -94,12 +94,12 @@ export function ProfitAndLossTab({ companyUuid }: { companyUuid: string }) {
             <CardContent className="flex flex-wrap items-center gap-6 pt-6 text-sm">
               <span>
                 Period:{" "}
-                <span className="font-semibold text-ink">
+                <span className="font-semibold text-ink light:text-light-ink">
                   {profitAndLossQuery.data.periodStart.slice(0, 10)} – {profitAndLossQuery.data.periodEnd.slice(0, 10)}
                 </span>
               </span>
               <span>
-                Net Profit: <span className="font-semibold text-ink">{profitAndLossQuery.data.netProfit}</span>
+                Net Profit: <span className="font-semibold text-ink light:text-light-ink">{profitAndLossQuery.data.netProfit}</span>
               </span>
               {profitAndLossQuery.data.isProvisional && <Badge variant="warning">Provisional</Badge>}
             </CardContent>
@@ -107,7 +107,7 @@ export function ProfitAndLossTab({ companyUuid }: { companyUuid: string }) {
 
           <Card>
             <CardContent className="pt-6">
-              <h3 className="mb-3 text-sm font-semibold text-ink">Revenue</h3>
+              <h3 className="mb-3 text-sm font-semibold text-ink light:text-light-ink">Revenue</h3>
               <ReportGroupTree
                 groups={profitAndLossQuery.data.revenue.groups}
                 total={profitAndLossQuery.data.revenue.total}
@@ -118,7 +118,7 @@ export function ProfitAndLossTab({ companyUuid }: { companyUuid: string }) {
 
           <Card>
             <CardContent className="pt-6">
-              <h3 className="mb-3 text-sm font-semibold text-ink">Expenses</h3>
+              <h3 className="mb-3 text-sm font-semibold text-ink light:text-light-ink">Expenses</h3>
               <ReportGroupTree
                 groups={profitAndLossQuery.data.expenses.groups}
                 total={profitAndLossQuery.data.expenses.total}

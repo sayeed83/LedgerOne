@@ -22,11 +22,11 @@ export function Switch({ label, hint, checked, onChange, disabled, className }: 
   return (
     <div className={cn("flex items-start justify-between gap-4", className)}>
       <span className="flex flex-col">
-        <span id={`${id}-label`} className="text-sm font-medium text-ink">
+        <span id={`${id}-label`} className="text-sm font-medium text-ink light:text-light-ink">
           {label}
         </span>
         {hint && (
-          <span id={hintId} className="text-xs text-ink-muted">
+          <span id={hintId} className="text-xs text-ink-muted light:text-light-ink-muted">
             {hint}
           </span>
         )}
@@ -41,7 +41,7 @@ export function Switch({ label, hint, checked, onChange, disabled, className }: 
         onClick={() => onChange(!checked)}
         className={cn(
           "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
-          checked ? "bg-primary-600" : "bg-surface-border",
+          checked ? "bg-primary-600" : "bg-surface-border light:bg-light-surface-border",
         )}
       >
         <span

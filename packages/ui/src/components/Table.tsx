@@ -9,22 +9,24 @@ import { cn } from "../utils/cn";
 // this package never fetches data).
 export function Table({ className, ...rest }: HTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="w-full overflow-x-auto rounded-xl border border-surface-border">
+    <div className="w-full overflow-x-auto rounded-xl border border-surface-border light:border-light-surface-border">
       <table className={cn("w-full border-collapse text-left text-sm", className)} {...rest} />
     </div>
   );
 }
 
 export function TableHeader({ className, ...rest }: HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={cn("bg-white/[0.03]", className)} {...rest} />;
+  return <thead className={cn("bg-white/[0.03] light:bg-black/[0.02]", className)} {...rest} />;
 }
 
 export function TableBody({ className, ...rest }: HTMLAttributes<HTMLTableSectionElement>) {
-  return <tbody className={cn("divide-y divide-surface-border", className)} {...rest} />;
+  return (
+    <tbody className={cn("divide-y divide-surface-border light:divide-light-surface-border", className)} {...rest} />
+  );
 }
 
 export function TableRow({ className, ...rest }: HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cn("transition-colors hover:bg-white/[0.02]", className)} {...rest} />;
+  return <tr className={cn("transition-colors hover:bg-white/[0.02] light:hover:bg-black/[0.02]", className)} {...rest} />;
 }
 
 export function TableHead({ className, ...rest }: ThHTMLAttributes<HTMLTableCellElement>) {
@@ -32,7 +34,7 @@ export function TableHead({ className, ...rest }: ThHTMLAttributes<HTMLTableCell
     <th
       scope="col"
       className={cn(
-        "whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-ink-muted",
+        "whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-ink-muted light:text-light-ink-muted",
         className,
       )}
       {...rest}
@@ -41,9 +43,9 @@ export function TableHead({ className, ...rest }: ThHTMLAttributes<HTMLTableCell
 }
 
 export function TableCell({ className, ...rest }: TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn("whitespace-nowrap px-4 py-3 text-ink", className)} {...rest} />;
+  return <td className={cn("whitespace-nowrap px-4 py-3 text-ink light:text-light-ink", className)} {...rest} />;
 }
 
 export function TableCaption({ className, ...rest }: HTMLAttributes<HTMLTableCaptionElement>) {
-  return <caption className={cn("mt-3 text-sm text-ink-muted", className)} {...rest} />;
+  return <caption className={cn("mt-3 text-sm text-ink-muted light:text-light-ink-muted", className)} {...rest} />;
 }

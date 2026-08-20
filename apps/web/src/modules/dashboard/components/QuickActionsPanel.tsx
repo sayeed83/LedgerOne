@@ -26,7 +26,7 @@ export function QuickActionsPanel({ actions }: QuickActionsPanelProps) {
           <Link
             key={action.href}
             href={action.href}
-            className="flex items-center gap-3 rounded-xl border border-surface-border px-4 py-3 text-sm font-medium text-ink transition-colors hover:border-primary-500/40 hover:bg-white/[0.04]"
+            className="flex items-center gap-3 rounded-xl border border-surface-border light:border-light-surface-border px-4 py-3 text-sm font-medium text-ink light:text-light-ink transition-colors hover:border-primary-500/40 hover:bg-white/[0.04] light:hover:bg-black/[0.03]"
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-500/15 text-primary-400">
               {action.icon}

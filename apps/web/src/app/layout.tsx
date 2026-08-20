@@ -13,10 +13,28 @@ export const metadata: Metadata = {
   description: "LedgerOne — Cloud Native ERP SaaS",
 };
 
+// ADR-003: dark-first — `<html>` carries no class by default (dark), and
+// the `light` class is the override. This inline script runs before
+// Providers/ThemeProvider mount (theme.context.tsx shares its exact
+// resolution logic) so the first paint already has the right class instead
+// of flashing dark before hydration corrects it.
+const ANTI_FLASH_SCRIPT = `
+(function () {
+  try {
+    var theme = localStorage.getItem("ledgerone.theme");
+    var isLight = theme === "light" || (theme !== "dark" && window.matchMedia("(prefers-color-scheme: light)").matches);
+    if (isLight) document.documentElement.classList.add("light");
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="bg-gray-50 font-sans text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-50">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: ANTI_FLASH_SCRIPT }} />
+      </head>
+      <body className="bg-surface font-sans text-ink antialiased light:bg-light-surface light:text-light-ink">
         <Providers>{children}</Providers>
       </body>
     </html>

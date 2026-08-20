@@ -56,7 +56,7 @@ export function BalanceSheetTab({ companyUuid }: { companyUuid: string }) {
 
       {balanceSheetQuery.isLoading && (
         <Card>
-          <CardContent className="pt-6 text-sm text-ink-muted">Loading Balance Sheet…</CardContent>
+          <CardContent className="pt-6 text-sm text-ink-muted light:text-light-ink-muted">Loading Balance Sheet…</CardContent>
         </Card>
       )}
 
@@ -69,11 +69,11 @@ export function BalanceSheetTab({ companyUuid }: { companyUuid: string }) {
           <Card>
             <CardContent className="flex flex-wrap items-center gap-6 pt-6 text-sm">
               <span>
-                As Of: <span className="font-semibold text-ink">{balanceSheetQuery.data.asOfDate.slice(0, 10)}</span>
+                As Of: <span className="font-semibold text-ink light:text-light-ink">{balanceSheetQuery.data.asOfDate.slice(0, 10)}</span>
               </span>
               <span>
                 Current Year Earnings:{" "}
-                <span className="font-semibold text-ink">{balanceSheetQuery.data.currentYearEarnings}</span>
+                <span className="font-semibold text-ink light:text-light-ink">{balanceSheetQuery.data.currentYearEarnings}</span>
               </span>
               <Badge variant={balanceSheetQuery.data.isBalanced ? "success" : "danger"}>
                 {balanceSheetQuery.data.isBalanced ? "Balanced" : "Not Balanced"}
@@ -84,7 +84,7 @@ export function BalanceSheetTab({ companyUuid }: { companyUuid: string }) {
 
           <Card>
             <CardContent className="pt-6">
-              <h3 className="mb-3 text-sm font-semibold text-ink">Assets</h3>
+              <h3 className="mb-3 text-sm font-semibold text-ink light:text-light-ink">Assets</h3>
               <ReportGroupTree
                 groups={balanceSheetQuery.data.assets.groups}
                 total={balanceSheetQuery.data.assets.total}
@@ -95,7 +95,7 @@ export function BalanceSheetTab({ companyUuid }: { companyUuid: string }) {
 
           <Card>
             <CardContent className="pt-6">
-              <h3 className="mb-3 text-sm font-semibold text-ink">Liabilities</h3>
+              <h3 className="mb-3 text-sm font-semibold text-ink light:text-light-ink">Liabilities</h3>
               <ReportGroupTree
                 groups={balanceSheetQuery.data.liabilities.groups}
                 total={balanceSheetQuery.data.liabilities.total}
@@ -106,7 +106,7 @@ export function BalanceSheetTab({ companyUuid }: { companyUuid: string }) {
 
           <Card>
             <CardContent className="pt-6">
-              <h3 className="mb-3 text-sm font-semibold text-ink">Equity</h3>
+              <h3 className="mb-3 text-sm font-semibold text-ink light:text-light-ink">Equity</h3>
               <ReportGroupTree
                 groups={balanceSheetQuery.data.equity.groups}
                 total={balanceSheetQuery.data.equity.total}

@@ -15,8 +15,8 @@ export function PageHeader({ title, description, actions, className }: PageHeade
   return (
     <div className={cn("mb-6 flex flex-wrap items-start justify-between gap-4", className)}>
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-ink">{title}</h1>
-        {description && <p className="mt-1 max-w-2xl text-sm text-ink-muted">{description}</p>}
+        <h1 className="text-xl font-semibold tracking-tight text-ink light:text-light-ink">{title}</h1>
+        {description && <p className="mt-1 max-w-2xl text-sm text-ink-muted light:text-light-ink-muted">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>

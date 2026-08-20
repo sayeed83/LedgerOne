@@ -16,11 +16,22 @@ import {
   EmptyState,
   LedgerOneMark,
   MenuIcon,
+  MonitorIcon,
+  MoonIcon,
   SearchIcon,
+  SunIcon,
   XIcon,
 } from "@ledgerone/ui";
 import { useAuth } from "@/modules/authentication/hooks/use-auth";
+import { useTheme } from "@/hooks/use-theme";
+import type { Theme } from "@/context/theme.context";
 import { NAV_ENTRIES, getBreadcrumbTrail, type NavItem } from "./navigation.config";
+
+const THEME_OPTIONS: { value: Theme; label: string; icon: typeof SunIcon }[] = [
+  { value: "light", label: "Light", icon: SunIcon },
+  { value: "dark", label: "Dark", icon: MoonIcon },
+  { value: "system", label: "System", icon: MonitorIcon },
+];
 
 // LAY-001: the desktop-first ERP shell — persistent left navigation, top
 // header chrome, breadcrumb, and a content slot. Responsive collapse
@@ -32,6 +43,7 @@ import { NAV_ENTRIES, getBreadcrumbTrail, type NavItem } from "./navigation.conf
 export function ErpShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { signOut } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   // Desktop-only icon rail toggle (LAY-001's mobile drawer is unaffected).
   // Lazy-init reads localStorage on the client only — SSR always renders
@@ -99,7 +111,7 @@ export function ErpShell({ children }: { children: ReactNode }) {
         className={`flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors ${
           options.indent ? "px-3 lg:pl-10" : "px-3"
         } ${isCollapsed ? "lg:justify-center lg:px-0" : ""} ${
-          isActive ? "bg-primary-500 text-white" : "text-ink-muted hover:bg-white/[0.06] hover:text-ink"
+          isActive ? "bg-primary-500 text-white" : "text-ink-muted light:text-light-ink-muted hover:bg-white/[0.06] light:hover:bg-black/[0.04] hover:text-ink light:hover:text-light-ink"
         }`}
       >
         <Icon className="h-5 w-5 shrink-0" />
@@ -109,7 +121,7 @@ export function ErpShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-surface text-ink">
+    <div className="flex min-h-screen bg-surface light:bg-light-surface text-ink light:text-light-ink">
       {isMobileNavOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/60 lg:hidden"
@@ -119,18 +131,18 @@ export function ErpShell({ children }: { children: ReactNode }) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col border-r border-surface-border bg-surface-card transition-[transform,width] lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col border-r border-surface-border light:border-light-surface-border bg-surface-card light:bg-light-surface-card transition-[transform,width] lg:static lg:translate-x-0 ${
           isMobileNavOpen ? "translate-x-0" : "-translate-x-full"
         } ${isCollapsed ? "lg:w-20 w-64" : "w-64"}`}
       >
         <div
-          className={`flex h-16 items-center gap-3 border-b border-surface-border px-5 ${
+          className={`flex h-16 items-center gap-3 border-b border-surface-border light:border-light-surface-border px-5 ${
             isCollapsed ? "lg:justify-center lg:px-3" : ""
           }`}
         >
           <LedgerOneMark className="h-8 w-8 shrink-0" />
           <div className={`min-w-0 ${isCollapsed ? "lg:hidden" : ""}`}>
-            <span className="block text-base font-semibold tracking-tight text-ink">LedgerOne</span>
+            <span className="block text-base font-semibold tracking-tight text-ink light:text-light-ink">LedgerOne</span>
             <span className="block text-[10px] font-bold uppercase tracking-wider text-warning-500">
               Cloud ERP Platform
             </span>
@@ -138,7 +150,7 @@ export function ErpShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={toggleCollapsed}
-            className={`ml-auto hidden shrink-0 items-center justify-center rounded-lg border border-surface-border p-1 text-ink-muted transition-colors hover:border-surface-borderStrong hover:bg-white/[0.06] hover:text-ink lg:flex ${
+            className={`ml-auto hidden shrink-0 items-center justify-center rounded-lg border border-surface-border light:border-light-surface-border p-1 text-ink-muted light:text-light-ink-muted transition-colors hover:border-surface-borderStrong light:border-light-surface-borderStrong hover:bg-white/[0.06] light:hover:bg-black/[0.04] hover:text-ink light:hover:text-light-ink lg:flex ${
               isCollapsed ? "lg:ml-0" : ""
             }`}
             aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}
@@ -149,7 +161,7 @@ export function ErpShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => setIsMobileNavOpen(false)}
-            className="ml-auto rounded-lg p-1.5 text-ink-muted hover:bg-white/[0.06] lg:hidden"
+            className="ml-auto rounded-lg p-1.5 text-ink-muted light:text-light-ink-muted hover:bg-white/[0.06] light:hover:bg-black/[0.04] lg:hidden"
             aria-label="Close navigation"
           >
             <XIcon className="h-5 w-5" />
@@ -168,7 +180,7 @@ export function ErpShell({ children }: { children: ReactNode }) {
               const GroupIcon = entry.icon;
               const panelId = `nav-group-panel-${entry.key}`;
               return (
-                <li key={entry.key} className={index > 0 ? "mt-2 border-t border-surface-border pt-2" : undefined}>
+                <li key={entry.key} className={index > 0 ? "mt-2 border-t border-surface-border light:border-light-surface-border pt-2" : undefined}>
                   <button
                     type="button"
                     onClick={() => handleGroupHeaderClick(entry.key)}
@@ -180,7 +192,7 @@ export function ErpShell({ children }: { children: ReactNode }) {
                     } ${
                       hasActiveChild
                         ? "bg-primary-500/15 text-primary-400"
-                        : "text-ink-muted hover:bg-white/[0.06] hover:text-ink"
+                        : "text-ink-muted light:text-light-ink-muted hover:bg-white/[0.06] light:hover:bg-black/[0.04] hover:text-ink light:hover:text-light-ink"
                     }`}
                   >
                     <GroupIcon className="h-5 w-5 shrink-0" />
@@ -208,11 +220,11 @@ export function ErpShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col lg:pl-0">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-surface-border bg-surface-card px-4 sm:px-6">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-surface-border light:border-light-surface-border bg-surface-card light:bg-light-surface-card px-4 sm:px-6">
           <button
             type="button"
             onClick={() => setIsMobileNavOpen(true)}
-            className="rounded-lg p-2 text-ink-muted hover:bg-white/[0.06] lg:hidden"
+            className="rounded-lg p-2 text-ink-muted light:text-light-ink-muted hover:bg-white/[0.06] light:hover:bg-black/[0.04] lg:hidden"
             aria-label="Open navigation"
           >
             <MenuIcon className="h-5 w-5" />
@@ -223,11 +235,11 @@ export function ErpShell({ children }: { children: ReactNode }) {
               const isLast = index === breadcrumbTrail.length - 1;
               return (
                 <span key={crumb.href} className="flex items-center gap-1.5 text-sm">
-                  {index > 0 && <ChevronRightIcon className="h-3.5 w-3.5 text-ink-faint" />}
+                  {index > 0 && <ChevronRightIcon className="h-3.5 w-3.5 text-ink-faint light:text-light-ink-faint" />}
                   {isLast ? (
-                    <span className="font-medium text-ink">{crumb.label}</span>
+                    <span className="font-medium text-ink light:text-light-ink">{crumb.label}</span>
                   ) : (
-                    <Link href={crumb.href} className="text-ink-muted hover:text-ink">
+                    <Link href={crumb.href} className="text-ink-muted light:text-light-ink-muted hover:text-ink light:hover:text-light-ink">
                       {crumb.label}
                     </Link>
                   )}
@@ -238,25 +250,25 @@ export function ErpShell({ children }: { children: ReactNode }) {
 
           {/* Search placeholder — no query wiring yet, per scope. */}
           <div className="relative hidden max-w-xs flex-1 md:flex lg:max-w-sm">
-            <SearchIcon className="pointer-events-none absolute inset-y-0 left-3 my-auto h-4 w-4 text-ink-faint" />
+            <SearchIcon className="pointer-events-none absolute inset-y-0 left-3 my-auto h-4 w-4 text-ink-faint light:text-light-ink-faint" />
             <input
               type="search"
               placeholder="Search…"
               disabled
               aria-label="Search (coming soon)"
-              className="w-full rounded-xl border border-surface-border bg-surface-sunken py-2 pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint disabled:cursor-not-allowed disabled:opacity-70"
+              className="w-full rounded-xl border border-surface-border light:border-light-surface-border bg-surface-sunken light:bg-light-surface-sunken py-2 pl-9 pr-3 text-sm text-ink light:text-light-ink placeholder:text-ink-faint light:text-light-ink-faint light:placeholder:text-light-ink-faint disabled:cursor-not-allowed disabled:opacity-70"
             />
           </div>
 
           <div className="ml-auto flex items-center gap-2">
             {/* Notification placeholder — static empty state, no live feed yet. */}
             <Dropdown align="right">
-              <DropdownTrigger className="relative rounded-lg p-2 text-ink-muted hover:bg-white/[0.06]" aria-label="Notifications">
+              <DropdownTrigger className="relative rounded-lg p-2 text-ink-muted light:text-light-ink-muted hover:bg-white/[0.06] light:hover:bg-black/[0.04]" aria-label="Notifications">
                 <BellIcon className="h-5 w-5" />
               </DropdownTrigger>
               <DropdownMenu className="w-72 p-0">
-                <div className="border-b border-surface-border px-4 py-3">
-                  <p className="text-sm font-semibold text-ink">Notifications</p>
+                <div className="border-b border-surface-border light:border-light-surface-border px-4 py-3">
+                  <p className="text-sm font-semibold text-ink light:text-light-ink">Notifications</p>
                 </div>
                 <EmptyState
                   title="No notifications yet"
@@ -267,15 +279,43 @@ export function ErpShell({ children }: { children: ReactNode }) {
             </Dropdown>
 
             <Dropdown align="right">
-              <DropdownTrigger className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-white/[0.06]" aria-label="Account menu">
+              <DropdownTrigger className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-white/[0.06] light:hover:bg-black/[0.04]" aria-label="Account menu">
                 <Avatar name="Account" size="sm" />
               </DropdownTrigger>
               <DropdownMenu className="w-56">
                 <div className="px-3 py-2">
-                  <p className="text-sm font-medium text-ink">Signed in</p>
-                  <p className="text-xs text-ink-muted">Session managed by LedgerOne Authentication</p>
+                  <p className="text-sm font-medium text-ink light:text-light-ink">Signed in</p>
+                  <p className="text-xs text-ink-muted light:text-light-ink-muted">Session managed by LedgerOne Authentication</p>
                 </div>
-                <div className="my-1 border-t border-surface-border" />
+                <div className="my-1 border-t border-surface-border light:border-light-surface-border" />
+                <div className="px-3 py-2">
+                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-ink-faint light:text-light-ink-faint">
+                    Theme
+                  </p>
+                  <div className="flex gap-1">
+                    {THEME_OPTIONS.map((option) => {
+                      const Icon = option.icon;
+                      const isActive = theme === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setTheme(option.value)}
+                          aria-pressed={isActive}
+                          className={`flex flex-1 flex-col items-center gap-1 rounded-lg py-1.5 text-[11px] font-medium transition-colors ${
+                            isActive
+                              ? "bg-primary-500/15 text-primary-400"
+                              : "text-ink-muted light:text-light-ink-muted hover:bg-white/[0.06] light:hover:bg-black/[0.04] hover:text-ink light:hover:text-light-ink"
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="my-1 border-t border-surface-border light:border-light-surface-border" />
                 <DropdownItem destructive onClick={() => void signOut()}>
                   Log out
                 </DropdownItem>

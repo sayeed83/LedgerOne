@@ -37,15 +37,15 @@ export function UserRoleAssignment({ userUuid }: UserRoleAssignmentProps) {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Assigned Roles</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Assigned Roles</p>
         {(userRolesQuery.data ?? []).length === 0 ? (
-          <p className="text-sm text-ink-muted">No Roles assigned yet.</p>
+          <p className="text-sm text-ink-muted light:text-light-ink-muted">No Roles assigned yet.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {userRolesQuery.data!.map((role) => (
               <span
                 key={role.uuid}
-                className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-sunken px-3 py-1 text-sm text-ink"
+                className="inline-flex items-center gap-2 rounded-full border border-surface-border light:border-light-surface-border bg-surface-sunken light:bg-light-surface-sunken px-3 py-1 text-sm text-ink light:text-light-ink"
               >
                 {role.name}
                 {role.isSystemRole && <Badge variant="default">System</Badge>}
@@ -54,7 +54,7 @@ export function UserRoleAssignment({ userUuid }: UserRoleAssignmentProps) {
                   aria-label={`Remove ${role.name} role`}
                   onClick={() => removeRole.mutate(role.uuid)}
                   disabled={removeRole.isPending}
-                  className="text-ink-faint hover:text-danger-500"
+                  className="text-ink-faint light:text-light-ink-faint hover:text-danger-500"
                 >
                   <TrashIcon className="h-3.5 w-3.5" />
                 </button>
@@ -65,9 +65,9 @@ export function UserRoleAssignment({ userUuid }: UserRoleAssignmentProps) {
       </div>
 
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Available Roles</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Available Roles</p>
         {availableRoles.length === 0 ? (
-          <p className="text-sm text-ink-muted">No further Roles to assign.</p>
+          <p className="text-sm text-ink-muted light:text-light-ink-muted">No further Roles to assign.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {availableRoles.map((role) => (

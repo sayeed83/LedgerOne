@@ -109,7 +109,7 @@ export function FinancialYearDetailScreen() {
             </LoadingButton>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 pt-4">
-            <div className="flex flex-wrap items-center gap-2 border-t border-surface-border pt-4">
+            <div className="flex flex-wrap items-center gap-2 border-t border-surface-border light:border-light-surface-border pt-4">
               <LoadingButton
                 variant="secondary"
                 size="sm"

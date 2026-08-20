@@ -18,8 +18,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: "bg-primary-600 text-white shadow-sm hover:bg-primary-700",
   secondary:
-    "border border-surface-border bg-surface-card text-ink shadow-sm hover:bg-white/[0.04]",
-  ghost: "bg-transparent text-ink hover:bg-white/[0.06]",
+    "border border-surface-border light:border-light-surface-border bg-surface-card light:bg-light-surface-card text-ink light:text-light-ink shadow-sm hover:bg-white/[0.04] light:hover:bg-black/[0.03]",
+  ghost: "bg-transparent text-ink light:text-light-ink hover:bg-white/[0.06] light:hover:bg-black/[0.04]",
   danger: "bg-danger-600 text-white shadow-sm hover:bg-danger-700",
 };
 
@@ -54,7 +54,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || isLoading}
         aria-busy={isLoading}
         className={cn(
-          "inline-flex items-center justify-center rounded-xl font-semibold transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-card disabled:cursor-not-allowed disabled:opacity-60",
+          "inline-flex items-center justify-center rounded-xl font-semibold transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-card light:focus-visible:ring-offset-light-surface-card disabled:cursor-not-allowed disabled:opacity-60",
           VARIANT_CLASSES[variant],
           SIZE_CLASSES[size],
           className,

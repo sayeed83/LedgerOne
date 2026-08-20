@@ -154,7 +154,7 @@ export function DropdownMenu({ children, className }: DropdownMenuProps) {
       aria-labelledby={triggerId}
       onKeyDown={handleKeyDown}
       className={cn(
-        "absolute z-30 mt-2 min-w-[180px] rounded-xl border border-surface-border bg-surface-card p-1.5 shadow-dropdown",
+        "absolute z-30 mt-2 min-w-[180px] rounded-xl border border-surface-border light:border-light-surface-border bg-surface-card light:bg-light-surface-card p-1.5 shadow-dropdown",
         align === "right" ? "right-0" : "left-0",
         className,
       )}
@@ -182,8 +182,10 @@ export function DropdownItem({ children, destructive, className, onClick, ...res
         close();
       }}
       className={cn(
-        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors focus:outline-none focus-visible:bg-white/[0.06]",
-        destructive ? "text-danger-400 hover:bg-danger-500/10" : "text-ink hover:bg-white/[0.06]",
+        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors focus:outline-none focus-visible:bg-white/[0.06] light:focus-visible:bg-black/[0.04]",
+        destructive
+          ? "text-danger-400 hover:bg-danger-500/10"
+          : "text-ink light:text-light-ink hover:bg-white/[0.06] light:hover:bg-black/[0.04]",
         className,
       )}
       {...rest}

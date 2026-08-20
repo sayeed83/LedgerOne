@@ -28,7 +28,7 @@ export function ModulePlaceholder({ icon, title, description }: ModulePlaceholde
         <Badge variant="default">Coming soon</Badge>
       </CardHeader>
       <CardContent className="pt-0">
-        <p className="max-w-2xl text-sm text-ink-muted">{description}</p>
+        <p className="max-w-2xl text-sm text-ink-muted light:text-light-ink-muted">{description}</p>
       </CardContent>
     </Card>
   );

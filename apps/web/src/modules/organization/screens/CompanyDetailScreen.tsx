@@ -98,7 +98,7 @@ export function CompanyDetailScreen() {
               />
             </dl>
 
-            <div className="flex flex-wrap items-center gap-2 border-t border-surface-border pt-4">
+            <div className="flex flex-wrap items-center gap-2 border-t border-surface-border light:border-light-surface-border pt-4">
               <LoadingButton
                 variant="secondary"
                 size="sm"
@@ -190,8 +190,8 @@ export function CompanyDetailScreen() {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-1 text-sm text-ink">{value}</dd>
+      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">{label}</dt>
+      <dd className="mt-1 text-sm text-ink light:text-light-ink">{value}</dd>
     </div>
   );
 }

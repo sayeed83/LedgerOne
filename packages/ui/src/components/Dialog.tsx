@@ -90,15 +90,15 @@ export function Dialog({ isOpen, onClose, title, description, children, footer, 
         aria-describedby={description ? "ledgerone-dialog-description" : undefined}
         tabIndex={-1}
         className={cn(
-          "relative z-10 w-full max-w-md rounded-2xl border border-surface-border bg-surface-card p-6 shadow-dialog focus:outline-none",
+          "relative z-10 w-full max-w-md rounded-2xl border border-surface-border light:border-light-surface-border bg-surface-card light:bg-light-surface-card p-6 shadow-dialog focus:outline-none",
           className,
         )}
       >
-        <h2 id="ledgerone-dialog-title" className="text-lg font-semibold tracking-tight text-ink">
+        <h2 id="ledgerone-dialog-title" className="text-lg font-semibold tracking-tight text-ink light:text-light-ink">
           {title}
         </h2>
         {description && (
-          <p id="ledgerone-dialog-description" className="mt-1.5 text-sm text-ink-muted">
+          <p id="ledgerone-dialog-description" className="mt-1.5 text-sm text-ink-muted light:text-light-ink-muted">
             {description}
           </p>
         )}

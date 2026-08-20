@@ -70,15 +70,15 @@ export function RolePermissionAssignment({ roleUuid }: RolePermissionAssignmentP
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Granted Permissions</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Granted Permissions</p>
         {(rolePermissionsQuery.data ?? []).length === 0 ? (
-          <p className="text-sm text-ink-muted">No Permissions granted yet.</p>
+          <p className="text-sm text-ink-muted light:text-light-ink-muted">No Permissions granted yet.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {rolePermissionsQuery.data!.map((permission) => (
               <span
                 key={permission.permissionKey}
-                className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-sunken px-3 py-1 text-sm text-ink"
+                className="inline-flex items-center gap-2 rounded-full border border-surface-border light:border-light-surface-border bg-surface-sunken light:bg-light-surface-sunken px-3 py-1 text-sm text-ink light:text-light-ink"
               >
                 {permission.permissionKey}
                 <Badge variant="default">{permission.action}</Badge>
@@ -87,7 +87,7 @@ export function RolePermissionAssignment({ roleUuid }: RolePermissionAssignmentP
                   aria-label={`Revoke ${permission.permissionKey}`}
                   onClick={() => removePermission.mutate(permission.permissionKey)}
                   disabled={removePermission.isPending}
-                  className="text-ink-faint hover:text-danger-500"
+                  className="text-ink-faint light:text-light-ink-faint hover:text-danger-500"
                 >
                   <TrashIcon className="h-3.5 w-3.5" />
                 </button>
@@ -98,18 +98,18 @@ export function RolePermissionAssignment({ roleUuid }: RolePermissionAssignmentP
       </div>
 
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Available Permissions</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">Available Permissions</p>
         {(permissionsQuery.data ?? []).length === 0 ? (
-          <p className="text-sm text-ink-muted">
+          <p className="text-sm text-ink-muted light:text-light-ink-muted">
             No Permissions exist in the platform catalog yet — none have been seeded or registered.
           </p>
         ) : availableByModule.size === 0 ? (
-          <p className="text-sm text-ink-muted">Every catalog Permission is already granted to this Role.</p>
+          <p className="text-sm text-ink-muted light:text-light-ink-muted">Every catalog Permission is already granted to this Role.</p>
         ) : (
           <div className="flex flex-col gap-3">
             {Array.from(availableByModule.entries()).map(([moduleName, permissions]) => (
               <div key={moduleName}>
-                <p className="mb-1 text-xs text-ink-faint">{moduleName}</p>
+                <p className="mb-1 text-xs text-ink-faint light:text-light-ink-faint">{moduleName}</p>
                 <div className="flex flex-wrap gap-2">
                   {permissions.map((permission) => (
                     <LoadingButton

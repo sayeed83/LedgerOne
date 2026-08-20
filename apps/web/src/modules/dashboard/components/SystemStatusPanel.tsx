@@ -34,7 +34,7 @@ export function SystemStatusPanel({ items }: SystemStatusPanelProps) {
       <CardContent className="flex flex-col gap-3 pt-0">
         {items.map((item) => (
           <div key={item.label} className="flex items-center justify-between">
-            <span className="text-sm text-ink">{item.label}</span>
+            <span className="text-sm text-ink light:text-light-ink">{item.label}</span>
             <Badge variant={STATUS_VARIANT[item.status]}>{STATUS_LABEL[item.status]}</Badge>
           </div>
         ))}

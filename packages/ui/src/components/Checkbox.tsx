@@ -24,15 +24,15 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
             type="checkbox"
             aria-describedby={hintId}
             className={cn(
-              "mt-0.5 h-4 w-4 shrink-0 rounded border-surface-border accent-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
+              "mt-0.5 h-4 w-4 shrink-0 rounded border-surface-border light:border-light-surface-border accent-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-60",
               className,
             )}
             {...rest}
           />
-          <span className="text-sm text-ink">{label}</span>
+          <span className="text-sm text-ink light:text-light-ink">{label}</span>
         </label>
         {hint && (
-          <p id={hintId} className="pl-6 text-xs text-ink-muted">
+          <p id={hintId} className="pl-6 text-xs text-ink-muted light:text-light-ink-muted">
             {hint}
           </p>
         )}

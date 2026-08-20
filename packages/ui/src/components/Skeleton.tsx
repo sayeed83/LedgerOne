@@ -13,7 +13,7 @@ export function Skeleton({ variant = "block", className, ...rest }: SkeletonProp
     <div
       aria-hidden="true"
       className={cn(
-        "animate-pulse bg-white/[0.06]",
+        "animate-pulse bg-white/[0.06] light:bg-black/[0.04]",
         variant === "text" && "h-4 rounded",
         variant === "circle" && "aspect-square rounded-full",
         variant === "block" && "rounded-lg",

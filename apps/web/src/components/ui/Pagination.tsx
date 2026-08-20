@@ -22,11 +22,11 @@ export function Pagination({ page, pageSize, totalItems, onPageChange }: Paginat
   }
 
   return (
-    <div className="mt-4 flex items-center justify-between gap-4 text-sm text-ink-muted">
+    <div className="mt-4 flex items-center justify-between gap-4 text-sm text-ink-muted light:text-light-ink-muted">
       <p>
-        Showing <span className="font-medium text-ink">{rangeStart}</span>–
-        <span className="font-medium text-ink">{rangeEnd}</span> of{" "}
-        <span className="font-medium text-ink">{totalItems}</span>
+        Showing <span className="font-medium text-ink light:text-light-ink">{rangeStart}</span>–
+        <span className="font-medium text-ink light:text-light-ink">{rangeEnd}</span> of{" "}
+        <span className="font-medium text-ink light:text-light-ink">{totalItems}</span>
       </p>
       <div className="flex items-center gap-1">
         <button
@@ -34,7 +34,7 @@ export function Pagination({ page, pageSize, totalItems, onPageChange }: Paginat
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
           aria-label="Previous page"
-          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/[0.06] light:hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ChevronLeftIcon className="h-4 w-4" />
         </button>
@@ -46,7 +46,7 @@ export function Pagination({ page, pageSize, totalItems, onPageChange }: Paginat
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
           aria-label="Next page"
-          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/[0.06] light:hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ChevronRightIcon className="h-4 w-4" />
         </button>

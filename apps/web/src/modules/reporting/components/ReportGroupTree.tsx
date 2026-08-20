@@ -25,7 +25,7 @@ export function ReportGroupTree({ groups, total, totalLabel, depth = 0 }: Report
         <ReportGroupNode key={group.accountGroupUuid} node={group} depth={depth} />
       ))}
       <div
-        className="flex items-center justify-between border-t border-border pt-2 text-sm font-semibold text-ink"
+        className="flex items-center justify-between border-t border-surface-border light:border-light-surface-border pt-2 text-sm font-semibold text-ink light:text-light-ink"
         style={{ paddingLeft: `${depth * 1.25}rem` }}
       >
         <span>{totalLabel}</span>
@@ -38,15 +38,15 @@ export function ReportGroupTree({ groups, total, totalLabel, depth = 0 }: Report
 function ReportGroupNode({ node, depth }: { node: ReportGroupedBalanceNodeDto; depth: number }) {
   return (
     <div style={{ paddingLeft: `${depth * 1.25}rem` }}>
-      <div className="flex items-center justify-between text-sm font-medium text-ink">
+      <div className="flex items-center justify-between text-sm font-medium text-ink light:text-light-ink">
         <span>{node.accountGroupName}</span>
         <span>{node.subtotal}</span>
       </div>
 
       {node.accountBalances.length > 0 && (
-        <div className="mt-1 flex flex-col gap-1 border-l border-border pl-3">
+        <div className="mt-1 flex flex-col gap-1 border-l border-surface-border light:border-light-surface-border pl-3">
           {node.accountBalances.map((row) => (
-            <div key={row.account.uuid} className="flex items-center justify-between text-sm text-ink-muted">
+            <div key={row.account.uuid} className="flex items-center justify-between text-sm text-ink-muted light:text-light-ink-muted">
               <span>
                 {row.account.code} — {row.account.name}
               </span>

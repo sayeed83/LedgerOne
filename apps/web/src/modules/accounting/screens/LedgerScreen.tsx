@@ -126,7 +126,7 @@ export function LedgerScreen() {
 
           {!accountUuid && (
             <Card>
-              <CardContent className="pt-6 text-sm text-ink-muted">Select an Account to view its Ledger.</CardContent>
+              <CardContent className="pt-6 text-sm text-ink-muted light:text-light-ink-muted">Select an Account to view its Ledger.</CardContent>
             </Card>
           )}
 
@@ -135,11 +135,11 @@ export function LedgerScreen() {
               <CardContent className="flex flex-wrap items-center gap-6 pt-6 text-sm">
                 <span>
                   Opening Balance:{" "}
-                  <span className="font-semibold text-ink">{ledgerQuery.data.data.openingBalance}</span>
+                  <span className="font-semibold text-ink light:text-light-ink">{ledgerQuery.data.data.openingBalance}</span>
                 </span>
                 <span>
                   Closing Balance:{" "}
-                  <span className="font-semibold text-ink">{ledgerQuery.data.data.closingBalance}</span>
+                  <span className="font-semibold text-ink light:text-light-ink">{ledgerQuery.data.data.closingBalance}</span>
                 </span>
               </CardContent>
             </Card>
@@ -208,8 +208,8 @@ export function LedgerScreen() {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-1 text-sm text-ink">{value}</dd>
+      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">{label}</dt>
+      <dd className="mt-1 text-sm text-ink light:text-light-ink">{value}</dd>
     </div>
   );
 }

@@ -44,7 +44,7 @@ export function OrganizationScreen() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {SECTIONS.map((section) => (
           <Link key={section.href} href={section.href}>
-            <Card className="h-full transition-colors hover:bg-white/[0.02]">
+            <Card className="h-full transition-colors hover:bg-white/[0.02] light:hover:bg-black/[0.02]">
               <CardHeader className="flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-500/15 text-primary-400">
@@ -52,10 +52,10 @@ export function OrganizationScreen() {
                   </span>
                   <CardTitle>{section.title}</CardTitle>
                 </div>
-                <ChevronRightIcon className="h-4 w-4 shrink-0 text-ink-faint" />
+                <ChevronRightIcon className="h-4 w-4 shrink-0 text-ink-faint light:text-light-ink-faint" />
               </CardHeader>
               <CardContent className="pt-0">
-                <p className="text-sm text-ink-muted">{section.description}</p>
+                <p className="text-sm text-ink-muted light:text-light-ink-muted">{section.description}</p>
               </CardContent>
             </Card>
           </Link>

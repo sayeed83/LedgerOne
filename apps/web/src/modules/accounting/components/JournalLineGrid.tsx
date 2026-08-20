@@ -32,10 +32,10 @@ export function JournalLineGrid({ companyUuid, control, errors, disabled = false
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-x-auto rounded-xl border border-surface-border">
+      <div className="overflow-x-auto rounded-xl border border-surface-border light:border-light-surface-border">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-surface-border bg-white/[0.02] text-left text-xs uppercase tracking-wide text-ink-muted">
+            <tr className="border-b border-surface-border light:border-light-surface-border bg-white/[0.02] light:bg-black/[0.02] text-left text-xs uppercase tracking-wide text-ink-muted light:text-light-ink-muted">
               <th className="px-3 py-2.5">Account</th>
               <th className="w-40 px-3 py-2.5">Debit</th>
               <th className="w-40 px-3 py-2.5">Credit</th>
@@ -44,7 +44,7 @@ export function JournalLineGrid({ companyUuid, control, errors, disabled = false
           </thead>
           <tbody>
             {fields.map((field, index) => (
-              <tr key={field.id} className="border-b border-surface-border last:border-0">
+              <tr key={field.id} className="border-b border-surface-border light:border-light-surface-border last:border-0">
                 <td className="px-3 py-2 align-top">
                   <Controller
                     name={`lines.${index}.accountUuid`}
@@ -91,7 +91,7 @@ export function JournalLineGrid({ companyUuid, control, errors, disabled = false
                     aria-label="Remove line"
                     disabled={disabled || fields.length <= 2}
                     onClick={() => remove(index)}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted light:text-light-ink-muted hover:bg-white/[0.06] light:hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <TrashIcon className="h-4 w-4" />
                   </button>
@@ -112,12 +112,12 @@ export function JournalLineGrid({ companyUuid, control, errors, disabled = false
         <p className="text-xs text-danger-600 dark:text-danger-400">{errors.lines.message}</p>
       )}
 
-      <div className="flex flex-wrap items-center justify-end gap-6 rounded-xl border border-surface-border bg-white/[0.02] px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center justify-end gap-6 rounded-xl border border-surface-border light:border-light-surface-border bg-white/[0.02] light:bg-black/[0.02] px-4 py-3 text-sm">
         <span>
-          Total Debit: <span className="font-semibold text-ink">{totalDebit.toFixed(2)}</span>
+          Total Debit: <span className="font-semibold text-ink light:text-light-ink">{totalDebit.toFixed(2)}</span>
         </span>
         <span>
-          Total Credit: <span className="font-semibold text-ink">{totalCredit.toFixed(2)}</span>
+          Total Credit: <span className="font-semibold text-ink light:text-light-ink">{totalCredit.toFixed(2)}</span>
         </span>
         <Badge variant={isBalanced ? "success" : "warning"}>{isBalanced ? "Balanced" : "Not Balanced"}</Badge>
       </div>

@@ -134,8 +134,8 @@ export function ProductCategoryDetailScreen() {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-1 text-sm text-ink">{value}</dd>
+      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted light:text-light-ink-muted">{label}</dt>
+      <dd className="mt-1 text-sm text-ink light:text-light-ink">{value}</dd>
     </div>
   );
 }
