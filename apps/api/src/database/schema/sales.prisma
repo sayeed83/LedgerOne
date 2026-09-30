@@ -1,0 +1,87 @@
+// Sales module — Prisma schema.
+// Standards: 06_DATABASE_STANDARDS.md (Ch.2 Naming/Standard Columns, Ch.3 Primary
+// Keys, Ch.4 Foreign Keys, Ch.5 Indexing, Ch.6 Multi-Tenant Isolation, Ch.8 Soft
+// Delete). Business rules: 00_BUSINESS_RULES.md Ch.45 (Customer).
+//
+// Module ownership: this module owns Customer — the Sales-context identity of
+// a party a Company sells to (Ch.45.4), a deliberately distinct Bounded
+// Context from the CRM-context view of the same real-world party (Ch.45.4,
+// `03_ARCHITECTURE.md` Ch.7.5). Database milestone only — no Repository/
+// Business/Presentation layer yet.
+//
+// Cross-module references (FK-002): `companyUuid` is a plain indexed column
+// with no DB-level foreign key — Company lives in Organization's schema
+// file, mirroring `inventory.prisma`'s `Product.companyUuid` and
+// `user-management.prisma`'s `User.companyUuid` exactly.
+//
+// Deferred per explicit instruction — not invented here:
+//   - Business Location (Ch.9) as its own table: Ch.45.3/45.10 reference
+//     billing/shipping Business Locations, but no dedicated Business
+//     Location entity exists in the schema yet (mirrors Branch's own
+//     `organization.prisma` precedent of inlining address fields pending
+//     that chapter's own dedicated milestone).
+//   - Price List (Ch.46) relationship: Ch.45.3/45.10 reference an assigned
+//     Price List, but Ch.46 has no schema of its own yet — no placeholder
+//     FK/column was added for it.
+//   - `customerCode`: unlike Company/Branch/Department/Product, Ch.45 does
+//     not define a short internal code field for Customer — none invented.
+
+/// Sales-context identity of a party a Company sells to (00_BUSINESS_RULES.md
+/// Ch.45.1) — the master-data record every Quotation/Sales Order/Invoice
+/// will reference, and the Accounts Receivable subledger party (Ch.45.14).
+/// Tenant-owned business data (MT-001): carries both `tenantId` and
+/// `companyUuid`, mirroring Product's own cross-module Company reference
+/// (CUS-001 — every Customer belongs to exactly one Company; the handbook's
+/// "unless configured as Organization-wide shared master data" exception,
+/// Ch.45.7, defines no concrete field/flag anywhere in Ch.45 and is not
+/// invented here).
+model Customer {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt @map("id")
+  uuid     String @unique @db.Char(36) @map("uuid")
+  tenantId BigInt @db.UnsignedBigInt @map("tenant_id")
+
+  /// Cross-module reference to Organization's `companies.uuid` (FK-002) — no DB-level FK.
+  companyUuid String @db.Char(36) @map("company_uuid")
+
+  /// Customer name (00_BUSINESS_RULES.md Ch.45.8) — required.
+  name String @db.VarChar(255) @map("name")
+
+  /// Billing/shipping address (Ch.45.3/45.10 Business Location, Ch.9), inlined on Customer pending the dedicated, cross-module Business Location entity Ch.9 anticipates — mirrors Branch's identical precedent (`organization.prisma`). Nullable: Ch.45.8 requires at least one Business Location only "before invoicing", a Business-layer validation at transaction time, not a Customer-creation-time DB constraint — a Prospect (Ch.45.5) may exist before any address is captured.
+  addressLine1 String? @db.VarChar(255) @map("address_line1")
+  addressLine2 String? @db.VarChar(255) @map("address_line2")
+  city         String? @db.VarChar(120) @map("city")
+  region       String? @db.VarChar(120) @map("region")
+  postalCode   String? @db.VarChar(20) @map("postal_code")
+  /// ISO 3166-1 alpha-2 country — mirrors Branch's own `countryCode` (Ch.9/LOC-001).
+  countryCode String? @db.Char(2) @map("country_code")
+
+  /// Credit limit (00_BUSINESS_RULES.md Ch.45.7 CUS-002, Ch.45.13) — the outstanding-balance ceiling enforced at the Business layer. DECIMAL(20,4): no Ch.45-documented precision/scale exists, so this mirrors the schema's established monetary-amount convention (`accounting.prisma` file header, Ch.16 DBL-003 `debitAmount`/`creditAmount`). Defaults to zero — Ch.45.12's "one-time, cash-basis Customer... zero credit limit" is a valid, deliberate configuration, not a placeholder.
+  creditLimit Decimal @default(0) @db.Decimal(20, 4) @map("credit_limit")
+
+  /// Payment terms (00_BUSINESS_RULES.md Ch.45.3/45.11, e.g. "Net-30") — free text, since Ch.45 defines no closed/enumerated set of terms (unlike Ch.45.5's lifecycle, which is a documented closed set).
+  paymentTerms String? @db.VarChar(64) @map("payment_terms")
+
+  /// Customer lifecycle state (00_BUSINESS_RULES.md Ch.45.5): Prospect, Active, OnHold, Inactive.
+  status CustomerStatus @default(PROSPECT) @map("status")
+
+  createdAt DateTime  @default(now()) @db.DateTime(3) @map("created_at")
+  updatedAt DateTime  @updatedAt @db.DateTime(3) @map("updated_at")
+  createdBy BigInt?   @db.UnsignedBigInt @map("created_by")
+  updatedBy BigInt?   @db.UnsignedBigInt @map("updated_by")
+  deletedAt DateTime? @db.DateTime(3) @map("deleted_at")
+
+  @@unique([companyUuid, name, deletedAt], map: "uq_customers_company_name_deleted_at")
+  @@index([tenantId, companyUuid], map: "idx_customers_tenant_company")
+  @@index([tenantId, companyUuid, status], map: "idx_customers_tenant_company_status")
+  @@map("customers")
+}
+
+/// Mirrors 00_BUSINESS_RULES.md Ch.45.5 Customer lifecycle exactly (05_CODING_STANDARDS.md Ch.26.4).
+enum CustomerStatus {
+  PROSPECT
+  ACTIVE
+  ON_HOLD
+  INACTIVE
+
+  @@map("customer_status")
+}

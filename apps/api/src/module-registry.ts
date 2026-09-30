@@ -32,6 +32,7 @@ import { createDefaultUserManagementRouter } from "./shared/user-management";
 import { createDefaultAuthorizationRouter } from "./shared/authorization";
 import { createDefaultAccountingRouter } from "./shared/accounting";
 import { createDefaultInventoryRouter } from "./shared/inventory";
+import { createDefaultSalesRouter } from "./shared/sales";
 import { createJwtAuthMiddleware } from "./common/middleware/jwt-auth.middleware";
 import { createCurrentTenantMiddleware } from "./common/middleware/current-tenant.middleware";
 
@@ -71,5 +72,14 @@ export function registerModules(app: Express): void {
     jwtAuthMiddleware,
     createCurrentTenantMiddleware({ rewriteHeaderAs: "decimal" }),
     createDefaultInventoryRouter(),
+  );
+
+  // Resource-named mount (`/api/v1/customers`), not module-named
+  // (`/api/v1/sales`) — see shared/sales/index.ts's own header comment.
+  app.use(
+    "/api/v1/customers",
+    jwtAuthMiddleware,
+    createCurrentTenantMiddleware({ rewriteHeaderAs: "decimal" }),
+    createDefaultSalesRouter(),
   );
 }

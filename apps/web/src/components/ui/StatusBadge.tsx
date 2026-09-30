@@ -29,6 +29,10 @@ const VARIANT_BY_STATUS: Record<string, BadgeVariant> = {
   DISCONTINUED: "danger",
   // Warehouse (Ch.37.5) reuses the existing ACTIVE/INACTIVE entries above
   // (already mapped for Branch's own BranchStatus) — no new colors invented.
+  // Sales module statuses (Customer, Ch.45.5) — same one-map-platform-wide
+  // rule (FP6); ACTIVE/INACTIVE reuse the existing entries above.
+  PROSPECT: "default",
+  ON_HOLD: "warning",
 };
 
 function toLabel(status: string): string {

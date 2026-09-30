@@ -56,6 +56,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   { label: "Stock Movements", href: "/inventory/stock-movements", icon: ArrowsRightLeftIcon, group: "Inventory" },
   { label: "Batches", href: "/inventory/batches", icon: CalendarIcon, group: "Inventory" },
   { label: "Reorder Levels", href: "/inventory/reorder-levels", icon: FilterIcon, group: "Inventory" },
+  { label: "Customers", href: "/customers", icon: UsersIcon, group: "Sales" },
 ];
 
 // One icon per group header — deliberately distinct from any single item's
@@ -65,6 +66,7 @@ const GROUP_ICONS: Record<string, (props: IconProps) => JSX.Element> = {
   "Org & Access": ShieldCheckIcon,
   Accounting: BookOpenIcon,
   Inventory: LayersIcon,
+  Sales: UsersIcon,
 };
 
 export interface NavLinkEntry {
@@ -258,6 +260,16 @@ export function getBreadcrumbTrail(pathname: string): BreadcrumbItem[] {
   // (`/inventory/reorder-levels/:reorderLevelUuid`), mirroring Batch's own branch above.
   if (pathname.startsWith("/inventory/reorder-levels/")) {
     trail.push({ label: "Reorder Levels", href: "/inventory/reorder-levels" });
+    trail.push({ label: "Details", href: pathname });
+  }
+
+  // Customer's own first nested/detail-level route
+  // (`/customers/:customerUuid`), mirroring Reorder Level's own branch above
+  // (flat one-level list + one detail route, no further nesting). Sales'
+  // backend router is mounted at `/api/v1/customers` directly
+  // (resource-named, not `/api/v1/sales`), so this route is top-level too.
+  if (pathname.startsWith("/customers/")) {
+    trail.push({ label: "Customers", href: "/customers" });
     trail.push({ label: "Details", href: pathname });
   }
 
